@@ -35,7 +35,7 @@ ClassInfo::BuildObject(v8::Isolate *isolate, v8::Local<v8::Context> context, job
 
     jobject superclassValue = env->GetObjectField(instance, superclassField);
     v8::Local<v8::Value> superclass;
-    if (superclassField == nullptr) {
+    if (superclassValue == nullptr) {
         superclass = v8::Null(isolate);
     } else {
         superclass = v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
@@ -178,7 +178,5 @@ ClassInfo::BuildObject(v8::Isolate *isolate, v8::Local<v8::Context> context, job
                    staticFields).Check();
     classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "isArray"),
                    isArray).Check();
-    classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "ref"),
-                   v8::External::New(isolate, instance)).Check();
     return classInfo;
 }

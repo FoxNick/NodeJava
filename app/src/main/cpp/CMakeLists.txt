@@ -34,6 +34,7 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         Locker.cpp
         Unlocker.cpp
         javabridge/ClassInfo.cpp
+        javabridge/Accessor.cpp
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC

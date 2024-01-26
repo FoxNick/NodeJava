@@ -106,19 +106,14 @@ v8::Local<v8::Object> Accessor::BuildFieldObject(
     JNIEnv *env = Main::env();
     jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jclass fieldClass = env->FindClass("java/lang/reflect/Field");
-    jclass methodClass = env->FindClass("java/lang/reflect/Method");
     jmethodID setFieldAccessible = env->GetMethodID(fieldClass, "setAccessible", "(Z)V");
-    jmethodID setMethodAccessible = env->GetMethodID(methodClass, "setAccessible", "(Z)V");
-    jmethodID getField = env->GetStaticMethodID(javaBridgeUtilClass, "getField",
-                                                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/reflect/Field;");
-    jmethodID getMethod = env->GetStaticMethodID(javaBridgeUtilClass, "getMethod",
-                                                 "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/reflect/Method;");
+    jmethodID getFieldByClassName = env->GetStaticMethodID(javaBridgeUtilClass, "getField",
+                                                           "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/reflect/Field;");
+    jmethodID getFieldByInstance = env->GetStaticMethodID(javaBridgeUtilClass, "getField",
+                                                          "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/reflect/Field;");
     jmethodID getFieldType = env->GetMethodID(fieldClass, "getType", "()Ljava/lang/Class;");
-    jmethodID getMethodType = env->GetMethodID(methodClass, "getReturnType", "()Ljava/lang/Class;");
     jmethodID get = env->GetMethodID(fieldClass, "get",
                                      "(Ljava/lang/Object;)Ljava/lang/Object;");
-    jmethodID invoke = env->GetMethodID(methodClass, "invoke",
-                                        "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;");
 
     if (self->IsFunction()) {
         v8::Local<v8::Function> constructor = self.As<v8::Function>();
@@ -126,43 +121,131 @@ v8::Local<v8::Object> Accessor::BuildFieldObject(
                                                                                     v8::String::NewFromUtf8Literal(
                                                                                             isolate,
                                                                                             "className"))).ToLocalChecked().As<v8::String>();
-        jobject fieldObject = env->CallStaticObjectMethod(javaBridgeUtilClass, getField,
+        jobject fieldObject = env->CallStaticObjectMethod(javaBridgeUtilClass, getFieldByClassName,
                                                           Util::CStr2JavaStr(
                                                                   *v8::String::Utf8Value(isolate,
                                                                                          className)),
                                                           Util::CStr2JavaStr(
                                                                   *v8::String::Utf8Value(isolate,
                                                                                          fieldName)));
+
+        if (env->ExceptionCheck()) {
+            jthrowable throwable = env->ExceptionOccurred();
+            env->ExceptionClear();
+            Util::ThrowExceptionToJS(isolate, throwable);
+            return v8::Object::New(isolate);
+        }
+
         env->CallVoidMethod(fieldObject, setFieldAccessible, true);
         jobject javaObject = env->CallObjectMethod(fieldObject, get, nullptr);
+
+        if (env->ExceptionCheck()) {
+            jthrowable throwable = env->ExceptionOccurred();
+            env->ExceptionClear();
+            Util::ThrowExceptionToJS(isolate, throwable);
+            return v8::Object::New(isolate);
+        }
+
         return wrapAsObject(isolate, context, javaObject,
                             env->CallObjectMethod(fieldObject, getFieldType));
     }
-    return v8::Local<v8::Object>();
+
+    v8::Local<v8::Object> instance = self.As<v8::Object>();
+    v8::Local<v8::External> ref = instance->Get(context, v8::Symbol::For(isolate,
+                                                                         v8::String::NewFromUtf8Literal(
+                                                                                 isolate,
+                                                                                 "__ref__"))).ToLocalChecked().As<v8::External>();
+
+
+    jobject fieldObject = env->CallStaticObjectMethod(javaBridgeUtilClass, getFieldByInstance,
+                                                      ref->Value(),
+                                                      Util::CStr2JavaStr(
+                                                              *v8::String::Utf8Value(isolate,
+                                                                                     fieldName)));
+
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+        return v8::Object::New(isolate);
+    }
+
+    env->CallVoidMethod(fieldObject, setFieldAccessible, true);
+    jobject javaObject = env->CallObjectMethod(fieldObject, get, ref->Value());
+
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+        return v8::Object::New(isolate);
+    }
+
+    return wrapAsObject(isolate, context, javaObject,
+                        env->CallObjectMethod(fieldObject, getFieldType));
 }
 
 v8::Local<v8::Object> Accessor::BuildMethodObject(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
         v8::Local<v8::Value> self,
-        v8::Local<v8::String> methodName
+        v8::Local<v8::String> methodName,
+        v8::Local<v8::Array> args
 ) {
     JNIEnv *env = Main::env();
     jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
-    jclass fieldClass = env->FindClass("java/lang/reflect/Field");
     jclass methodClass = env->FindClass("java/lang/reflect/Method");
-    jmethodID setFieldAccessible = env->GetMethodID(fieldClass, "setAccessible", "(Z)V");
+    jclass objectClass = env->FindClass("java/lang/Object");
+    jclass javaDoubleClass = env->FindClass("java/lang/Double");
+    jclass javaBooleanClass = env->FindClass("java/lang/Boolean");
     jmethodID setMethodAccessible = env->GetMethodID(methodClass, "setAccessible", "(Z)V");
-    jmethodID getField = env->GetStaticMethodID(javaBridgeUtilClass, "getField",
-                                                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/reflect/Field;");
-    jmethodID getMethod = env->GetStaticMethodID(javaBridgeUtilClass, "getMethod",
-                                                 "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/reflect/Method;");
-    jmethodID getFieldType = env->GetMethodID(fieldClass, "getType", "()Ljava/lang/Class;");
+    jmethodID getMethodByClassName = env->GetStaticMethodID(javaBridgeUtilClass, "getMethod",
+                                                            "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;)[Ljava/lang/Object;");
+    jmethodID getMethodByInstance = env->GetStaticMethodID(javaBridgeUtilClass, "getMethod",
+                                                           "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/Object;)[Ljava/lang/Object;");
     jmethodID getMethodType = env->GetMethodID(methodClass, "getReturnType", "()Ljava/lang/Class;");
-    jmethodID get = env->GetMethodID(fieldClass, "get",
-                                     "(Ljava/lang/Object;)Ljava/lang/Object;");
     jmethodID invoke = env->GetMethodID(methodClass, "invoke",
                                         "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;");
+    jmethodID doubleValueOf = env->GetStaticMethodID(javaDoubleClass, "valueOf",
+                                                     "(D)Ljava/lang/Double;");
+    jmethodID booleanValueOf = env->GetStaticMethodID(javaBooleanClass, "valueOf",
+                                                      "(Z)Ljava/lang/Boolean;");
+
+    int length = args->Length();
+    jobjectArray params = env->NewObjectArray(length, objectClass, nullptr);
+    for (int index = 0; index < length; index++) {
+        v8::Local<v8::Value> value = args->Get(context, index).ToLocalChecked();
+        if (value->IsNumber()) {
+            env->SetObjectArrayElement(params, index,
+                                       env->CallStaticObjectMethod(javaDoubleClass,
+                                                                   doubleValueOf,
+                                                                   value.As<v8::Number>()->Value()));
+        } else if (value->IsString()) {
+            env->SetObjectArrayElement(params, index, Util::CStr2JavaStr(
+                    *v8::String::Utf8Value(isolate, value.As<v8::String>())));
+        } else if (value->IsBoolean()) {
+            env->SetObjectArrayElement(params, index,
+                                       env->CallStaticObjectMethod(javaBooleanClass,
+                                                                   booleanValueOf,
+                                                                   value.As<v8::Boolean>()->Value()));
+        } else if (value->IsObject()) {
+            v8::Local<v8::Object> obj = value.As<v8::Object>();
+            v8::MaybeLocal<v8::Value> maybeExternal = obj->Get(context,
+                                                               v8::Symbol::For(isolate,
+                                                                               v8::String::NewFromUtf8Literal(
+                                                                                       isolate,
+                                                                                       "__ref__")));
+            if (!maybeExternal.IsEmpty() &&
+                maybeExternal.ToLocalChecked()->IsExternal()) {
+                env->SetObjectArrayElement(params, index,
+                                           static_cast<jobject>(maybeExternal.ToLocalChecked().As<v8::External>()->Value())
+                );
+            } else {
+                isolate->ThrowException(v8::Exception::TypeError(
+                        v8::String::NewFromUtf8Literal(isolate, "Unknown type")));
+                return v8::Object::New(isolate);
+            }
+        }
+    }
 
     if (self->IsFunction()) {
         v8::Local<v8::Function> constructor = self.As<v8::Function>();
@@ -170,20 +253,73 @@ v8::Local<v8::Object> Accessor::BuildMethodObject(
                                                                                     v8::String::NewFromUtf8Literal(
                                                                                             isolate,
                                                                                             "className"))).ToLocalChecked().As<v8::String>();
-        jobject methodObject = env->CallStaticObjectMethod(javaBridgeUtilClass, getMethod,
-                                                           Util::CStr2JavaStr(
-                                                                   *v8::String::Utf8Value(isolate,
-                                                                                          className)),
-                                                           Util::CStr2JavaStr(
-                                                                   *v8::String::Utf8Value(isolate,
-                                                                                          methodName)));
-        env->CallVoidMethod(methodObject, setMethodAccessible, true);
-        jobject javaObject = env->CallObjectMethod(methodObject, invoke, nullptr,
-                                                   env->NewObjectArray(0, env->FindClass(
-                                                                               "java/lang/Object"),
-                                                                       nullptr));
+        jobjectArray resultArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(
+                javaBridgeUtilClass, getMethodByClassName,
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
+                Util::CStr2JavaStr(
+                        *v8::String::Utf8Value(isolate,
+                                               methodName)),
+                params));
+
+        if (env->ExceptionCheck()) {
+            jthrowable throwable = env->ExceptionOccurred();
+            env->ExceptionClear();
+            Util::ThrowExceptionToJS(isolate, throwable);
+            return v8::Object::New(isolate);
+        }
+
+        jobject method = env->GetObjectArrayElement(resultArray, 0);
+        jobjectArray finalParams = static_cast<jobjectArray>(env->GetObjectArrayElement(resultArray,
+                                                                                        1));
+        env->CallVoidMethod(method, setMethodAccessible, true);
+        jobject javaObject = env->CallObjectMethod(method, invoke, nullptr, finalParams);
+
+
+        if (env->ExceptionCheck()) {
+            jthrowable throwable = env->ExceptionOccurred();
+            env->ExceptionClear();
+            Util::ThrowExceptionToJS(isolate, throwable);
+            return v8::Object::New(isolate);
+        }
+
         return wrapAsObject(isolate, context, javaObject,
-                            env->CallObjectMethod(methodObject, getMethodType));
+                            env->CallObjectMethod(method, getMethodType));
     }
-    return v8::Local<v8::Object>();
+
+    v8::Local<v8::Object> instance = self.As<v8::Object>();
+    v8::Local<v8::External> ref = instance->Get(context, v8::Symbol::For(isolate,
+                                                                         v8::String::NewFromUtf8Literal(
+                                                                                 isolate,
+                                                                                 "__ref__"))).ToLocalChecked().As<v8::External>();
+
+    jobjectArray resultArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(
+            javaBridgeUtilClass, getMethodByInstance,
+            ref->Value(),
+            Util::CStr2JavaStr(
+                    *v8::String::Utf8Value(isolate,
+                                           methodName)),
+            params));
+
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+        return v8::Object::New(isolate);
+    }
+
+    jobject method = env->GetObjectArrayElement(resultArray, 0);
+    jobjectArray finalParams = static_cast<jobjectArray>(env->GetObjectArrayElement(resultArray,
+                                                                                    1));
+    env->CallVoidMethod(method, setMethodAccessible, true);
+    jobject javaObject = env->CallObjectMethod(method, invoke, ref->Value(), finalParams);
+
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+        return v8::Object::New(isolate);
+    }
+
+    return wrapAsObject(isolate, context, javaObject,
+                        env->CallObjectMethod(method, getMethodType));
 }

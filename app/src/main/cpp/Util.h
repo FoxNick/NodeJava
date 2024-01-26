@@ -4,6 +4,7 @@
 
 #ifndef NODEJAVA_UTIL_H
 #define NODEJAVA_UTIL_H
+#include <v8.h>
 
 namespace Util {
     void SetPtr(jclass javaClass, const char *fieldName, void *ptr);
@@ -13,6 +14,8 @@ namespace Util {
     void *GetPtr(jclass javaClass, const char *fieldName);
 
     void *GetPtr(jobject instance, const char *fieldName);
+
+    void ThrowExceptionToJS(v8::Isolate *isolate, jthrowable throwable);
 
     void ThrowScriptCompilingException(const char *message);
 

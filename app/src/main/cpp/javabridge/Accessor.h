@@ -31,7 +31,8 @@ public:
             v8::Isolate *isolate,
             v8::Local<v8::Context> context,
             v8::Local<v8::Value> self,
-            v8::Local<v8::String> methodName
+            v8::Local<v8::String> methodName,
+            v8::Local<v8::Array> args
     );
 };
 

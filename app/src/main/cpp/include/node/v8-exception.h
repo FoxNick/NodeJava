@@ -101,7 +101,7 @@ class V8_EXPORT TryCatch {
 
   /**
    * Throws the exception caught by this TryCatch in a way that avoids
-   * it being caught again by this same TryCatch.  As with ThrowException
+   * it being caught again by this same TryCatch.  As with ThrowExceptionToJS
    * it is illegal to execute any JavaScript operations after calling
    * ReThrow; the caller must return immediately to where the exception
    * is caught.

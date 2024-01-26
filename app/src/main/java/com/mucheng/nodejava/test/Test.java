@@ -4,11 +4,16 @@ import android.util.Log;
 
 public class Test {
 
-    public static Object[] values = { new Object() };
+    public int a = 10;
 
-    public static Object test() {
-        Log.e("Invoke", "Y");
-        return null;
+    public static int b = 20;
+
+    public void print(String s) {
+        Log.e("Test", "print: " + s);
+    }
+
+    public static void print(int v) {
+        Log.e("Test", "print: " + v);
     }
 
 }

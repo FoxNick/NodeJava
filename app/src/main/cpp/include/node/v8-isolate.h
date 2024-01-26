@@ -884,7 +884,7 @@ class V8_EXPORT Isolate {
 
   /**
    * Schedules a v8::Exception::Error with the given message.
-   * See ThrowException for more details. Templatized to provide compile-time
+   * See ThrowExceptionToJS for more details. Templatized to provide compile-time
    * errors in case of too long strings (see v8::String::NewFromUtf8Literal).
    */
   template <int N>

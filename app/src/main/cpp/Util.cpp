@@ -59,3 +59,29 @@ void Util::ThrowNodeException(const char *message) {
             message
     );
 }
+
+void Util::ThrowExceptionToJS(v8::Isolate *isolate, jthrowable throwable) {
+    JNIEnv *env = Main::env();
+    jclass throwableClass = env->FindClass("java/lang/Throwable");
+    jclass stringWriterClass = env->FindClass("java/io/StringWriter");
+    jclass printWriterClass = env->FindClass("java/io/PrintWriter");
+    jclass writerClass = env->FindClass("java/io/Writer");
+    jmethodID stringWriterInit = env->GetMethodID(stringWriterClass, "<init>", "()V");
+    jmethodID printWriterInit = env->GetMethodID(printWriterClass, "<init>", "(Ljava/io/Writer;)V");
+    jmethodID printStackTrace = env->GetMethodID(throwableClass, "printStackTrace",
+                                                 "(Ljava/io/PrintWriter;)V");
+    jmethodID toString = env->GetMethodID(stringWriterClass, "toString", "()Ljava/lang/String;");
+    jmethodID close = env->GetMethodID(writerClass, "close", "()V");
+
+    jobject stringWriter = env->NewObject(stringWriterClass, stringWriterInit);
+    jobject printWriter = env->NewObject(printWriterClass, printWriterInit, stringWriter);
+
+    env->CallVoidMethod(throwable, printStackTrace, printWriter);
+    jobject stackTrace = env->CallObjectMethod(stringWriter, toString);
+
+    env->CallVoidMethod(printWriter, close);
+    env->CallVoidMethod(stringWriter, close);
+
+    isolate->ThrowError(v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
+            static_cast<jstring>(stackTrace))).ToLocalChecked());
+}

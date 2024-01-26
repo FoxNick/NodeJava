@@ -33,6 +33,8 @@
 
         $java.prototypes[className] = prototype;
 
+        installInnerClasses(newClass, classInfo.declaredClasses);
+
         const javaClass = lazy(() => $java.classForName(className));
         Object.defineProperty(newClass, "class", {
             get: javaClass,
@@ -59,6 +61,10 @@
             if (classInfo.isArray) {
                 return constructJavaArray(classInfo, arguments, this, constructor);
             }
+
+            const args = Array.prototype.slice.call(arguments);
+            const javaObjectRef = $java.__createJavaObject(classInfo.className, args);
+            $java.__makeReference(this, javaObjectRef);
         }
         constructor[$java.className] = classInfo.className;
         installJavaMethodAndFields(constructor, classInfo.className, classInfo.staticMethods, classInfo.staticFields);
@@ -90,6 +96,7 @@
                 enumerable: true,
                 configurable: false,
                 get: function () {
+                    console.log("Run")
                     return $java.getReturnValue($java.getField(this, field.name));
                 }
             };
@@ -155,6 +162,25 @@
         };
     }
 
+    function installInnerClasses(object, declaredClasses) {
+        declaredClasses.forEach(declaredClassName => {
+            const dollar = declaredClassName.lastIndexOf("$");
+            if (dollar < 0 || dollar >= declaredClassName.length - 1) {
+                return;
+            }
+
+            try {
+                const declaredClass = $java.findClassOrNull(declaredClassName);
+                if (declaredClass) {
+                    const simplifiedName = declaredClassName.substring(dollar + 1);
+                    object[simplifiedName] = declaredClass;
+                }
+            } catch (e) {
+
+            }
+        });
+    }
+
     $java.getReturnValue = function (returnValue) {
         const javaClass = returnValue.javaClass;
         if (javaClass == null) {
@@ -177,5 +203,8 @@
 $java.setUnsafeReflectionEnabled(true);
 
 const clazz = $java.findClass("com.mucheng.nodejava.test.Test");
-console.log(clazz.class);
-//console.log(new clazz);
+const instance = new clazz();
+console.log(instance.a);
+console.log(instance.b);
+instance.print("hello");
+instance.print(1);

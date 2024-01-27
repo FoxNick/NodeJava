@@ -12,7 +12,7 @@ public class ClassInfo {
 
     public String superclass;
 
-    public String[] declaredClasses;
+    public String[] classes;
 
     public Method[] methods;
 
@@ -32,15 +32,15 @@ public class ClassInfo {
             this.superclass = superclass.getName();
         }
 
-        Class<?>[] declaredClasses = clazz.getDeclaredClasses();
-        this.declaredClasses = new String[declaredClasses.length];
+        Class<?>[] classes = clazz.getDeclaredClasses();
+        this.classes = new String[classes.length];
 
-        for (int index = 0; index < declaredClasses.length; index++) {
-            this.declaredClasses[index] = declaredClasses[index].getName();
+        for (int index = 0; index < classes.length; index++) {
+            this.classes[index] = classes[index].getName();
         }
 
-        Method[] allMethods = JavaBridgeUtil.isUnsafeReflectionEnabled() ? clazz.getDeclaredMethods() : clazz.getMethods();
-        Field[] allFields = JavaBridgeUtil.isUnsafeReflectionEnabled() ? clazz.getDeclaredFields() : clazz.getFields();
+        Method[] allMethods = clazz.getDeclaredMethods();
+        Field[] allFields = clazz.getDeclaredFields();
 
         List<Method> theMethods = new ArrayList<>();
         List<Field> theFields = new ArrayList<>();
@@ -71,7 +71,6 @@ public class ClassInfo {
         this.fields = theFields.toArray(fieldTypedArray);
         this.staticMethods = theStaticMethods.toArray(methodTypedArray);
         this.staticFields = theStaticFields.toArray(fieldTypedArray);
-
         this.isArray = clazz.isArray();
     }
 

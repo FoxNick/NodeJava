@@ -1,8 +1,9 @@
 #include "ClassInfo.h"
 #include "main.h"
 #include "Util.h"
+#include "log.h"
 
-v8::Local<v8::Object>
+v8::Local<v8::Value>
 ClassInfo::BuildObject(v8::Isolate *isolate, v8::Local<v8::Context> context, jobject instance) {
     JNIEnv *env = Main::env();
 
@@ -18,8 +19,8 @@ ClassInfo::BuildObject(v8::Isolate *isolate, v8::Local<v8::Context> context, job
     jmethodID isFinal = env->GetStaticMethodID(modifierClass, "isFinal", "(I)Z");
     jfieldID classNameField = env->GetFieldID(classInfoClass, "className", "Ljava/lang/String;");
     jfieldID superclassField = env->GetFieldID(classInfoClass, "superclass", "Ljava/lang/String;");
-    jfieldID declaredClassesField = env->GetFieldID(classInfoClass, "declaredClasses",
-                                                    "[Ljava/lang/String;");
+    jfieldID classesField = env->GetFieldID(classInfoClass, "classes",
+                                            "[Ljava/lang/String;");
     jfieldID methodsField = env->GetFieldID(classInfoClass, "methods",
                                             "[Ljava/lang/reflect/Method;");
     jfieldID fieldsField = env->GetFieldID(classInfoClass, "fields", "[Ljava/lang/reflect/Field;");
@@ -43,7 +44,7 @@ ClassInfo::BuildObject(v8::Isolate *isolate, v8::Local<v8::Context> context, job
     }
 
     jobjectArray declaredClassesValue = static_cast<jobjectArray>(env->GetObjectField(instance,
-                                                                                      declaredClassesField));
+                                                                                      classesField));
     int declaredClassesLength = env->GetArrayLength(declaredClassesValue);
     v8::Local<v8::Array> declaredClasses = v8::Array::New(isolate, declaredClassesLength);
     for (int index = 0; index < declaredClassesLength; index++) {

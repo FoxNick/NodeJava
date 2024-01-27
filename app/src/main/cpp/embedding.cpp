@@ -26,7 +26,7 @@ v8::Local<v8::Value> getClassInfo(
     return ClassInfo::BuildObject(isolate, context, classInfoInstance);
 }
 
-v8::Local<v8::Value> makeReturnValue(
+v8::Local<v8::Value> makeJSReturnValue(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
         jobject type,
@@ -105,8 +105,8 @@ v8::Local<v8::Value> makeReturnValue(
             jobject elementClass = env->CallObjectMethod(element, getClass);
             jobject elementComponentType = env->CallObjectMethod(elementClass, getComponentType);
             array->Set(context, index,
-                       makeReturnValue(isolate, context, componentType, elementComponentType,
-                                       element)).Check();
+                       makeJSReturnValue(isolate, context, componentType, elementComponentType,
+                                         element)).Check();
         }
     } else {
         javaClass = v8::String::NewFromUtf8(isolate, typeStr).ToLocalChecked();
@@ -118,6 +118,16 @@ v8::Local<v8::Value> makeReturnValue(
                 javaClass).Check();
     result->Set(context, v8::String::NewFromUtf8Literal(isolate, "value"), value).Check();
     return result;
+}
+
+jobject makeJavaReturnValue(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        v8::Local<v8::Value> jsObject
+) {
+    JNIEnv *env = Main::env();
+    
+    return nullptr;
 }
 
 v8::Local<v8::Value> getField(
@@ -134,6 +144,7 @@ v8::Local<v8::Value> getField(
 
     jobjectArray javaObjectArray;
     if (!Wrapper::IsWrapped(isolate, context, self)) {
+        LOGE("Exec");
         javaObjectArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(
                 javaBridgeUtil,
                 getField,
@@ -158,7 +169,7 @@ v8::Local<v8::Value> getField(
         return v8::Null(isolate);
     }
 
-    return makeReturnValue(
+    return makeJSReturnValue(
             isolate,
             context,
             env->GetObjectArrayElement(javaObjectArray, 0),
@@ -185,6 +196,26 @@ void makeReference(
         v8::Local<v8::External> value
 ) {
     Wrapper::WrapTo(isolate, context, target, static_cast<jobject>(value->Value()));
+}
+
+v8::Local<v8::Value> createJavaObject(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        v8::Local<v8::String> className,
+        v8::Local<v8::Array> arguments
+) {
+    JNIEnv *env = Main::env();
+    jclass javaClazz = env->FindClass("java/lang/Class");
+
+    int length = arguments->Length();
+    jobjectArray javaParams = env->NewObjectArray(length, javaClazz, nullptr);
+
+    for (int index = 0; index < length; index++) {
+        v8::Local<v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
+        env->SetObjectArrayElement(javaParams, index, makeJavaReturnValue(isolate, context, jsObject));
+    }
+
+    return v8::Local<v8::Value>();
 }
 
 void JAVA_ACCESSOR_BINDING(
@@ -235,11 +266,38 @@ void JAVA_ACCESSOR_BINDING(
 
     exports->Set(
             context,
+            v8::String::NewFromUtf8Literal(isolate, "__createJavaObject"),
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                SETUP_CALLBACK_INFO();
+                info.GetReturnValue().Set(
+                        createJavaObject(isolate, context, info[0].As<v8::String>(),
+                                         info[1].As<v8::Array>()));
+            }).ToLocalChecked()
+    ).Check();
+
+    exports->Set(
+            context,
             v8::String::NewFromUtf8Literal(isolate, "__makeReference"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
                 makeReference(isolate, context, info[0].As<v8::Object>(),
                               info[1].As<v8::External>());
+            }).ToLocalChecked()
+    ).Check();
+
+    exports->Set(
+            context,
+            v8::String::NewFromUtf8Literal(isolate, "__unwrap"),
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                SETUP_CALLBACK_INFO();
+                if (Wrapper::IsWrapped(isolate, context, info[0].As<v8::Object>())) {
+                    info.GetReturnValue().Set(
+                            info[0].As<v8::Object>()->Get(context, v8::Symbol::For(isolate,
+                                                                                   v8::String::NewFromUtf8Literal(
+                                                                                           isolate,
+                                                                                           "__ref__"))).ToLocalChecked().As<v8::External>()
+                    );
+                }
             }).ToLocalChecked()
     ).Check();
 

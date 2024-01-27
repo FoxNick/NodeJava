@@ -1,5 +1,7 @@
 package com.mucheng.nodejava.javabridge;
 
+import android.util.Log;
+
 import java.lang.reflect.Field;
 
 /**
@@ -39,6 +41,8 @@ public final class JavaBridgeUtil {
         if (isUnsafeReflectionEnabled()) {
             field.setAccessible(true);
         }
+
+        Log.e("Target", "" + field.get(target));
 
         return new Object[]{field.getType(), field.getType().getComponentType(), field.get(target)};
     }

@@ -39,6 +39,7 @@
                 enumerable: true,
                 configurable: false,
                 get: function () {
+                    console.log(this);
                     return $java.getReturnValue($java.__getField(className, fieldName, this));
                 }
             };
@@ -88,6 +89,8 @@
             if (args.length === 1 && arguments[0] === lateInitSymbol) {
                 return;
             }
+
+            $java.__makeReference(this, $java.__createJavaObject(className, args));
         });
         installJavaMethodAndFields([constructor, constructor.prototype], className, classInfo.staticMethods, classInfo.staticFields);
         installJavaMethodAndFields([constructor.prototype], className, classInfo.methods, classInfo.fields);
@@ -127,4 +130,4 @@
 $java.setUnsafeReflectionEnabled(true);
 
 const test2 = $java.findClass("com.mucheng.nodejava.test.Test2");
-console.log(test2.test1);
+console.log(new test2());

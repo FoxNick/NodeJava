@@ -192,7 +192,7 @@ class PersistentValueMapBase {
   }
 
   /**
-   * Get value stored in map and set it in returnValue.
+   * Get value stored in map and set it in makeReturnValue.
    * Return true if a value was found.
    */
   bool SetReturnValue(const K& key,

@@ -46,13 +46,6 @@ void Util::ThrowScriptRuntimeException(const char *message) {
     );
 }
 
-void Util::ThrowV8Exception(const char *message) {
-    Main::env()->ThrowNew(
-            Main::env()->FindClass("com/mucheng/nodejava/core/exception/V8Exception"),
-            message
-    );
-}
-
 void Util::ThrowNodeException(const char *message) {
     Main::env()->ThrowNew(
             Main::env()->FindClass("com/mucheng/nodejava/core/exception/NodeException"),
@@ -84,4 +77,8 @@ void Util::ThrowExceptionToJS(v8::Isolate *isolate, jthrowable throwable) {
 
     isolate->ThrowError(v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
             static_cast<jstring>(stackTrace))).ToLocalChecked());
+}
+
+v8::Local<v8::External> Util::NewExternal(v8::Isolate *isolate, void *value) {
+    return v8::External::New(isolate, value);
 }

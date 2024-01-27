@@ -1,5 +1,7 @@
 package com.mucheng.nodejava.javabridge;
 
+import java.lang.reflect.Field;
+
 /**
  * @noinspection unused
  */
@@ -29,6 +31,16 @@ public final class JavaBridgeUtil {
 
     public static boolean isUnsafeReflectionEnabled() {
         return unsafeReflectionEnabled;
+    }
+
+    public static Object[] getField(String className, String fieldName, Object target) throws ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
+        Class<?> clazz = getClassLoader().loadClass(className);
+        Field field = clazz.getDeclaredField(fieldName);
+        if (isUnsafeReflectionEnabled()) {
+            field.setAccessible(true);
+        }
+
+        return new Object[]{field.getType(), field.getType().getComponentType(), field.get(target)};
     }
 
 }

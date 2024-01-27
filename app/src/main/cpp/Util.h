@@ -15,13 +15,13 @@ namespace Util {
 
     void *GetPtr(jobject instance, const char *fieldName);
 
+    v8::Local<v8::External> NewExternal(v8::Isolate *isolate, void *value);
+
     void ThrowExceptionToJS(v8::Isolate *isolate, jthrowable throwable);
 
     void ThrowScriptCompilingException(const char *message);
 
     void ThrowScriptRuntimeException(const char *message);
-
-    void ThrowV8Exception(const char *message);
 
     void ThrowNodeException(const char *message);
 

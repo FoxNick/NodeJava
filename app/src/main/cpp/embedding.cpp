@@ -126,7 +126,46 @@ jobject makeJavaReturnValue(
         v8::Local<v8::Value> jsObject
 ) {
     JNIEnv *env = Main::env();
-    
+    jclass integerClass = env->FindClass("java/lang/Integer");
+    jclass longClass = env->FindClass("java/lang/Long");
+    jclass doubleClass = env->FindClass("java/lang/Double");
+    jclass booleanClass = env->FindClass("java/lang/Boolean");
+    jmethodID integerValueOf = env->GetStaticMethodID(integerClass, "valueOf",
+                                                      "(I)Ljava/lang/Integer;");
+    jmethodID longValueOf = env->GetStaticMethodID(longClass, "valueOf", "(J)Ljava/lang/Long;");
+    jmethodID doubleValueOf = env->GetStaticMethodID(doubleClass, "valueOf",
+                                                     "(D)Ljava/lang/Double;");
+    jmethodID booleanValueOf = env->GetStaticMethodID(booleanClass, "valueOf",
+                                                      "(Z)Ljava/lang/Boolean;");
+    if (jsObject->IsInt32()) {
+        return env->CallStaticObjectMethod(integerClass, integerValueOf,
+                                           jsObject.As<v8::Int32>()->Value());
+    } else if (jsObject->IsBigInt()) {
+        return env->CallStaticObjectMethod(longClass, longValueOf,
+                                           jsObject.As<v8::BigInt>()->Int64Value());
+    } else if (jsObject->IsNumber()) {
+        return env->CallStaticObjectMethod(doubleClass, doubleValueOf,
+                                           jsObject.As<v8::Number>()->Value());
+    } else if (jsObject->IsBoolean()) {
+        return env->CallStaticObjectMethod(booleanClass, booleanValueOf,
+                                           jsObject.As<v8::Boolean>()->Value());
+    } else if (jsObject->IsString()) {
+        return Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, jsObject.As<v8::String>()));
+    } else if (jsObject->IsArray()) {
+        v8::Local<v8::Array> array = jsObject.As<v8::Array>();
+        int length = array->Length();
+        jclass javaObjectClass = env->FindClass("java/lang/Object");
+        jobjectArray javaArray = env->NewObjectArray(length, javaObjectClass, nullptr);
+        for (int index = 0; index < length; index++) {
+            v8::Local<v8::Value> element = array->Get(context, index).ToLocalChecked();
+            env->SetObjectArrayElement(javaArray, index,
+                                       makeJavaReturnValue(isolate, context, element));
+        }
+    } else if (jsObject->IsObject() &&
+               Wrapper::IsWrapped(isolate, context, jsObject.As<v8::Object>())) {
+        return Wrapper::Unwrap(isolate, context, jsObject.As<v8::Object>());
+    }
+    isolate->ThrowError("Cannot convert JavaScript object to Java object");
     return nullptr;
 }
 
@@ -205,16 +244,23 @@ v8::Local<v8::Value> createJavaObject(
         v8::Local<v8::Array> arguments
 ) {
     JNIEnv *env = Main::env();
-    jclass javaClazz = env->FindClass("java/lang/Class");
+    jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
+    jclass javaObjectClass = env->FindClass("java/lang/Object");
+    jmethodID getConstructor = env->GetStaticMethodID(javaBridgeUtilClass, "getConstructor",
+                                                      "(Ljava/lang/String;[Ljava/lang/Object;)[Ljava/lang/Object;");
 
     int length = arguments->Length();
-    jobjectArray javaParams = env->NewObjectArray(length, javaClazz, nullptr);
+    jobjectArray javaParams = env->NewObjectArray(length, javaObjectClass, nullptr);
 
     for (int index = 0; index < length; index++) {
         v8::Local<v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
-        env->SetObjectArrayElement(javaParams, index, makeJavaReturnValue(isolate, context, jsObject));
+        env->SetObjectArrayElement(javaParams, index,
+                                   makeJavaReturnValue(isolate, context, jsObject));
     }
 
+    env->CallStaticObjectMethod(javaBridgeUtilClass, getConstructor,
+                                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
+                                javaParams);
     return v8::Local<v8::Value>();
 }
 

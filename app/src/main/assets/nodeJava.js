@@ -130,4 +130,4 @@
 $java.setUnsafeReflectionEnabled(true);
 
 const test2 = $java.findClass("com.mucheng.nodejava.test.Test2");
-console.log(new test2());
+console.log(new test2("str", true, 3, 4));

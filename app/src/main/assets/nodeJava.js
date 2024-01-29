@@ -19,13 +19,13 @@
 
             const displayMethodName = `${className}.${methodName}`;
             const invoke = function (target, args) {
-                return;
+                return $java.getReturnValue($java.__callMethod(className, methodName, args, target));
             }
             const func = functionWithName(displayMethodName, function () {
                 return invoke(this, Array.prototype.slice.call(arguments));
             });
             objects.forEach(object => {
-                object[methodName] = methodName;
+                object[methodName] = func;
             });
         });
 
@@ -39,7 +39,6 @@
                 enumerable: true,
                 configurable: false,
                 get: function () {
-                    console.log(this);
                     return $java.getReturnValue($java.__getField(className, fieldName, this));
                 }
             };
@@ -129,5 +128,5 @@
 })();
 $java.setUnsafeReflectionEnabled(true);
 
-const test2 = $java.findClass("com.mucheng.nodejava.test.Test2");
-console.log(new test2("str", true, 3, 4));
+const test2 = $java.findClass("android.app.ActivityThread");
+console.log(test2.sCurrentActivityThread);

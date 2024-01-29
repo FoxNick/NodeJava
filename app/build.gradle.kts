@@ -7,7 +7,8 @@ plugins {
 
 android {
     namespace = "com.mucheng.nodejava"
-    compileSdk = 34
+    //noinspection GradleCompatible
+    compileSdk = 33
 
     defaultConfig {
         applicationId = "com.mucheng.nodejava"

@@ -1,9 +1,11 @@
 package com.mucheng.nodejava.test;
 
+import android.util.Log;
+
 public class Test2 extends Test {
 
-    private int a = 10;
-
-    public static Integer w = 20;
+    public void p(char s) {
+        Log.e("Out", "" + s);
+    }
 
 }

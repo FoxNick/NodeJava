@@ -62,7 +62,10 @@ v8::Local<v8::Value> makeJSReturnValue(
     const char *typeStr = Util::JavaStr2CStr(
             static_cast<jstring>(env->CallObjectMethod(type, getName)));
 
-    if (!strcmp(typeStr, "byte")) {
+    if (!strcmp(typeStr, "void")) {
+        javaClass = v8::Null(isolate);
+        value = v8::Undefined(isolate);
+    } else if (!strcmp(typeStr, "byte")) {
         javaClass = v8::Null(isolate);
         value = v8::Integer::New(isolate, env->CallByteMethod(javaObject, byteValue));
     } else if (!strcmp(typeStr, "short")) {
@@ -183,7 +186,6 @@ v8::Local<v8::Value> getField(
 
     jobjectArray javaObjectArray;
     if (!Wrapper::IsWrapped(isolate, context, self)) {
-        LOGE("Exec");
         javaObjectArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(
                 javaBridgeUtil,
                 getField,
@@ -221,11 +223,59 @@ v8::Local<v8::Value> callMethod(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
         v8::Local<v8::String> className,
-        v8::Local<v8::String> fieldName,
+        v8::Local<v8::String> methodName,
         v8::Local<v8::Array> arguments,
         v8::Local<v8::Object> self
 ) {
-    return v8::Local<v8::Value>();
+    JNIEnv *env = Main::env();
+    jclass javaBridgeUtil = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
+    jclass javaObjectClass = env->FindClass("java/lang/Object");
+    jmethodID callMethod = env->GetStaticMethodID(javaBridgeUtil, "callMethod",
+                                                  "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;Ljava/lang/Object;)[Ljava/lang/Object;");
+
+    int length = arguments->Length();
+    jobjectArray javaParams = env->NewObjectArray(length, javaObjectClass, nullptr);
+    for (int index = 0; index < length; index++) {
+        v8::Local <v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
+        env->SetObjectArrayElement(javaParams, index,
+                                   makeJavaReturnValue(isolate, context, jsObject));
+    }
+
+    jobjectArray javaObjectArray;
+    if (!Wrapper::IsWrapped(isolate, context, self)) {
+        javaObjectArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(
+                javaBridgeUtil,
+                callMethod,
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, methodName)),
+                javaParams,
+                nullptr
+        ));
+    } else {
+        javaObjectArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(
+                javaBridgeUtil,
+                callMethod,
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, methodName)),
+                javaParams,
+                Wrapper::Unwrap(isolate, context, self)
+        ));
+    }
+
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+        return v8::Null(isolate);
+    }
+
+    return makeJSReturnValue(
+            isolate,
+            context,
+            env->GetObjectArrayElement(javaObjectArray, 0),
+            env->GetObjectArrayElement(javaObjectArray, 1),
+            env->GetObjectArrayElement(javaObjectArray, 2)
+    );
 }
 
 void makeReference(
@@ -247,7 +297,7 @@ v8::Local<v8::Value> createJavaObject(
     jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jclass javaObjectClass = env->FindClass("java/lang/Object");
     jmethodID getConstructor = env->GetStaticMethodID(javaBridgeUtilClass, "getConstructor",
-                                                      "(Ljava/lang/String;[Ljava/lang/Object;)[Ljava/lang/Object;");
+                                                      "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;");
 
     int length = arguments->Length();
     jobjectArray javaParams = env->NewObjectArray(length, javaObjectClass, nullptr);
@@ -258,10 +308,20 @@ v8::Local<v8::Value> createJavaObject(
                                    makeJavaReturnValue(isolate, context, jsObject));
     }
 
-    env->CallStaticObjectMethod(javaBridgeUtilClass, getConstructor,
-                                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
-                                javaParams);
-    return v8::Local<v8::Value>();
+    jobject javaObject = env->CallStaticObjectMethod(javaBridgeUtilClass, getConstructor,
+                                                     Util::CStr2JavaStr(
+                                                             *v8::String::Utf8Value(isolate,
+                                                                                    className)),
+                                                     javaParams);
+
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+        return v8::Null(isolate);
+    }
+
+    return v8::External::New(isolate, env->NewGlobalRef(javaObject));
 }
 
 void JAVA_ACCESSOR_BINDING(

@@ -52,6 +52,18 @@ public final class JavaBridgeUtil {
     return new Object[]{field.getType(), field.getType().getComponentType(), field.get(target)};
   }
 
+  public static void setField(String className, String fieldName, Object value, Object target) throws ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
+    Class<?> clazz = getClassLoader().loadClass(className);
+    Field field = clazz.getDeclaredField(fieldName);
+    if (isUnsafeReflectionEnabled()) {
+      try {
+        field.setAccessible(true);
+      } catch (SecurityException ignored) {
+      }
+    }
+
+    field.set(target, value);
+  }
   public static Object[] callMethod(String className, String methodName, Object[] arguments, Object target) throws ClassNotFoundException, InvocationTargetException, IllegalAccessException {
     Class<?> clazz = getClassLoader().loadClass(className);
     Method[] methods = clazz.getDeclaredMethods();

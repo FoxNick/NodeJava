@@ -167,7 +167,7 @@ ClassInfo::BuildObject(v8::Isolate *isolate, v8::Local<v8::Context> context, job
                    className).Check();
     classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "superclass"),
                    superclass).Check();
-    classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "declaredClasses"),
+    classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "classes"),
                    declaredClasses).Check();
     classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "methods"),
                    methods).Check();

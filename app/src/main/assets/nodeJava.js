@@ -44,7 +44,7 @@
             };
             if (field.mutable) {
                 attributes["set"] = function (value) {
-
+                    $java.__setField(className, fieldName, value, this);
                 }
             }
             objects.forEach(object => {
@@ -100,8 +100,19 @@
             Object.setPrototypeOf(constructor, superclass);
         }
 
+        installInnerClasses(constructor, classInfo.classes);
+        Object.defineProperty(constructor, "class", {
+            get: function() {
+                return $java.classForName(className);
+            }
+        });
+
         constructor[$java.className] = className;
         return constructor;
+    }
+
+    $java.classForName = function (className) {
+        return $java.getReturnValue($java.__classForName(className));
     }
 
     $java.findClass = function (className) {
@@ -111,6 +122,24 @@
         }
 
         return clazz;
+    }
+
+    function installInnerClasses(object, declaredClasses) {
+        declaredClasses.forEach(declaredClassName => {
+            const dollar = declaredClassName.lastIndexOf("$");
+            if (dollar < 0 || dollar >= declaredClassName.length - 1) {
+                return;
+            }
+            try {
+                const declaredClass = $java.findClassOrNull(declaredClassName);
+                if (declaredClass) {
+                    const simplifiedName = declaredClassName.substring(dollar + 1);
+                    object[simplifiedName] = declaredClass
+                }
+            } catch (e) {
+
+            }
+        });
     }
 
     function functionWithName(name, func) {
@@ -128,5 +157,6 @@
 })();
 $java.setUnsafeReflectionEnabled(true);
 
-const test2 = $java.findClass("android.app.ActivityThread");
-console.log(test2.sCurrentActivityThread);
+const test2 = $java.findClass("com.mucheng.nodejava.test.Test");
+test2.w = 50;
+console.log(test2.class);

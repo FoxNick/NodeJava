@@ -5,6 +5,20 @@
 #include "javabridge//Wrapper.h"
 #include "Util.h"
 
+v8::Local<v8::Value> makeJSReturnValue(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        jobject type,
+        jobject componentType,
+        jobject javaObject
+);
+
+jobject makeJavaReturnValue(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        v8::Local<v8::Value> jsObject
+);
+
 v8::Local<v8::Value> getClassInfo(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
@@ -24,6 +38,41 @@ v8::Local<v8::Value> getClassInfo(
     }
 
     return ClassInfo::BuildObject(isolate, context, classInfoInstance);
+}
+
+v8::Local<v8::Value> classForName(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        v8::Local<v8::String> className
+) {
+    JNIEnv *env = Main::env();
+    jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
+    jclass javaObjectClass = env->FindClass("java/lang/Object");
+    jclass javaClass = env->FindClass("java/lang/Class");
+    jclass classLoaderClass = env->FindClass("java/lang/ClassLoader");
+    jmethodID getClass = env->GetMethodID(javaObjectClass, "getClass", "()Ljava/lang/Class;");
+    jmethodID getClassLoader = env->GetStaticMethodID(javaBridgeUtilClass, "getClassLoader",
+                                                      "()Ljava/lang/ClassLoader;");
+    jmethodID loadClass = env->GetMethodID(classLoaderClass, "loadClass",
+                                           "(Ljava/lang/String;)Ljava/lang/Class;");
+    jmethodID getComponentType = env->GetMethodID(javaClass, "getComponentType",
+                                                  "()Ljava/lang/Class;");
+    jobject classLoaderObject = env->CallStaticObjectMethod(javaBridgeUtilClass, getClassLoader);
+    jobject javaClassObject = env->CallObjectMethod(classLoaderObject, loadClass,
+                                                    Util::CStr2JavaStr(
+                                                            *v8::String::Utf8Value(isolate,
+                                                                                   className)));
+    jobject type = env->CallObjectMethod(javaClassObject, getClass);
+    jobject componentType = env->CallObjectMethod(type, getComponentType);
+
+    jobject componentTypeObject = env->CallObjectMethod(javaClassObject, getComponentType);
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+        return v8::Null(isolate);
+    }
+    return makeJSReturnValue(isolate, context, type, componentTypeObject, javaClassObject);
 }
 
 v8::Local<v8::Value> makeJSReturnValue(
@@ -219,6 +268,47 @@ v8::Local<v8::Value> getField(
     );
 }
 
+void setField(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        v8::Local<v8::String> className,
+        v8::Local<v8::String> fieldName,
+        v8::Local<v8::Value> value,
+        v8::Local<v8::Object> self
+) {
+    JNIEnv *env = Main::env();
+    jclass javaBridgeUtil = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
+    jmethodID callMethod = env->GetStaticMethodID(javaBridgeUtil, "setField",
+                                                  "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V");
+    jobject javaObject = makeJavaReturnValue(isolate, context, value);
+
+    if (!Wrapper::IsWrapped(isolate, context, self)) {
+        env->CallStaticVoidMethod(
+                javaBridgeUtil,
+                callMethod,
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, fieldName)),
+                javaObject,
+                nullptr
+        );
+    } else {
+        env->CallStaticVoidMethod(
+                javaBridgeUtil,
+                callMethod,
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
+                Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, fieldName)),
+                javaObject,
+                Wrapper::Unwrap(isolate, context, self)
+        );
+    }
+
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+    }
+}
+
 v8::Local<v8::Value> callMethod(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
@@ -236,7 +326,7 @@ v8::Local<v8::Value> callMethod(
     int length = arguments->Length();
     jobjectArray javaParams = env->NewObjectArray(length, javaObjectClass, nullptr);
     for (int index = 0; index < length; index++) {
-        v8::Local <v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
+        v8::Local<v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
         env->SetObjectArrayElement(javaParams, index,
                                    makeJavaReturnValue(isolate, context, jsObject));
     }
@@ -340,6 +430,15 @@ void JAVA_ACCESSOR_BINDING(
 
     exports->Set(
             context,
+            v8::String::NewFromUtf8Literal(isolate, "__classForName"),
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                SETUP_CALLBACK_INFO();
+                info.GetReturnValue().Set(classForName(isolate, context, info[0].As<v8::String>()));
+            }).ToLocalChecked()
+    ).Check();
+
+    exports->Set(
+            context,
             v8::String::NewFromUtf8Literal(isolate, "getClassInfo"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
@@ -355,6 +454,18 @@ void JAVA_ACCESSOR_BINDING(
                 info.GetReturnValue().Set(getField(isolate, context, info[0].As<v8::String>(),
                                                    info[1].As<v8::String>(),
                                                    info[2].As<v8::Object>()));
+            }).ToLocalChecked()
+    ).Check();
+
+    exports->Set(
+            context,
+            v8::String::NewFromUtf8Literal(isolate, "__setField"),
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                SETUP_CALLBACK_INFO();
+                setField(isolate, context, info[0].As<v8::String>(),
+                         info[1].As<v8::String>(),
+                         info[2].As<v8::Value>(),
+                         info[2].As<v8::Object>());
             }).ToLocalChecked()
     ).Check();
 
@@ -388,22 +499,6 @@ void JAVA_ACCESSOR_BINDING(
                 SETUP_CALLBACK_INFO();
                 makeReference(isolate, context, info[0].As<v8::Object>(),
                               info[1].As<v8::External>());
-            }).ToLocalChecked()
-    ).Check();
-
-    exports->Set(
-            context,
-            v8::String::NewFromUtf8Literal(isolate, "__unwrap"),
-            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
-                SETUP_CALLBACK_INFO();
-                if (Wrapper::IsWrapped(isolate, context, info[0].As<v8::Object>())) {
-                    info.GetReturnValue().Set(
-                            info[0].As<v8::Object>()->Get(context, v8::Symbol::For(isolate,
-                                                                                   v8::String::NewFromUtf8Literal(
-                                                                                           isolate,
-                                                                                           "__ref__"))).ToLocalChecked().As<v8::External>()
-                    );
-                }
             }).ToLocalChecked()
     ).Check();
 

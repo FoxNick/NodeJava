@@ -8,9 +8,8 @@
 v8::Local<v8::Value> makeJSReturnValue(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
-        jobject type,
-        jobject componentType,
-        jobject javaObject
+        jobject javaObject,
+        bool isVoid
 );
 
 jobject makeJavaReturnValue(
@@ -47,40 +46,32 @@ v8::Local<v8::Value> classForName(
 ) {
     JNIEnv *env = Main::env();
     jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
-    jclass javaObjectClass = env->FindClass("java/lang/Object");
-    jclass javaClass = env->FindClass("java/lang/Class");
     jclass classLoaderClass = env->FindClass("java/lang/ClassLoader");
-    jmethodID getClass = env->GetMethodID(javaObjectClass, "getClass", "()Ljava/lang/Class;");
     jmethodID getClassLoader = env->GetStaticMethodID(javaBridgeUtilClass, "getClassLoader",
                                                       "()Ljava/lang/ClassLoader;");
     jmethodID loadClass = env->GetMethodID(classLoaderClass, "loadClass",
                                            "(Ljava/lang/String;)Ljava/lang/Class;");
-    jmethodID getComponentType = env->GetMethodID(javaClass, "getComponentType",
-                                                  "()Ljava/lang/Class;");
     jobject classLoaderObject = env->CallStaticObjectMethod(javaBridgeUtilClass, getClassLoader);
     jobject javaClassObject = env->CallObjectMethod(classLoaderObject, loadClass,
                                                     Util::CStr2JavaStr(
                                                             *v8::String::Utf8Value(isolate,
                                                                                    className)));
-    jobject type = env->CallObjectMethod(javaClassObject, getClass);
-    jobject componentType = env->CallObjectMethod(type, getComponentType);
 
-    jobject componentTypeObject = env->CallObjectMethod(javaClassObject, getComponentType);
     if (env->ExceptionCheck()) {
         jthrowable throwable = env->ExceptionOccurred();
         env->ExceptionClear();
         Util::ThrowExceptionToJS(isolate, throwable);
         return v8::Null(isolate);
     }
-    return makeJSReturnValue(isolate, context, type, componentTypeObject, javaClassObject);
+
+    return makeJSReturnValue(isolate, context, javaClassObject, false);
 }
 
 v8::Local<v8::Value> makeJSReturnValue(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
-        jobject type,
-        jobject componentType,
-        jobject javaObject
+        jobject javaObject,
+        bool isVoid
 ) {
     JNIEnv *env = Main::env();
     jclass javaObjectClass = env->FindClass("java/lang/Object");
@@ -89,8 +80,7 @@ v8::Local<v8::Value> makeJSReturnValue(
     jclass numberClass = env->FindClass("java/lang/Number");
     jclass booleanClass = env->FindClass("java/lang/Boolean");
     jclass charactorClass = env->FindClass("java/lang/Character");
-    jmethodID getComponentType = env->GetMethodID(javaClazz, "getComponentType",
-                                                  "()Ljava/lang/Class;");
+
     jmethodID getClass = env->GetMethodID(javaObjectClass, "getClass", "()Ljava/lang/Class;");
     jmethodID getName = env->GetMethodID(javaClazz, "getName", "()Ljava/lang/String;");
     jmethodID isArray = env->GetMethodID(javaClazz, "isArray", "()Z");
@@ -108,34 +98,43 @@ v8::Local<v8::Value> makeJSReturnValue(
     v8::Local<v8::Value> javaClass;
     v8::Local<v8::Value> value;
 
-    const char *typeStr = Util::JavaStr2CStr(
-            static_cast<jstring>(env->CallObjectMethod(type, getName)));
+    jobject javaObjectClazz =
+            javaObject != nullptr ? env->CallObjectMethod(javaObject, getClass) : nullptr;
+    const char *typeStr = javaObjectClazz != nullptr ? Util::JavaStr2CStr(
+            static_cast<jstring>(env->CallObjectMethod(javaObjectClazz, getName))) : nullptr;
 
-    if (!strcmp(typeStr, "void")) {
+    if (typeStr == nullptr) {
+        javaClass = v8::Null(isolate);
+        if (isVoid) {
+            value = v8::Undefined(isolate);
+        } else {
+            value = v8::Null(isolate);
+        }
+    } else if (!strcmp(typeStr, "java.lang.Void")) {
         javaClass = v8::Null(isolate);
         value = v8::Undefined(isolate);
-    } else if (!strcmp(typeStr, "byte")) {
+    } else if (!strcmp(typeStr, "java.lang.Byte")) {
         javaClass = v8::Null(isolate);
         value = v8::Integer::New(isolate, env->CallByteMethod(javaObject, byteValue));
-    } else if (!strcmp(typeStr, "short")) {
+    } else if (!strcmp(typeStr, "java.lang.Short")) {
         javaClass = v8::Null(isolate);
         value = v8::Integer::New(isolate, env->CallShortMethod(javaObject, shortValue));
-    } else if (!strcmp(typeStr, "int")) {
+    } else if (!strcmp(typeStr, "java.lang.Integer")) {
         javaClass = v8::Null(isolate);
         value = v8::Integer::New(isolate, env->CallIntMethod(javaObject, intValue));
-    } else if (!strcmp(typeStr, "long")) {
+    } else if (!strcmp(typeStr, "java.lang.Long")) {
         javaClass = v8::Null(isolate);
         value = v8::BigInt::New(isolate, env->CallLongMethod(javaObject, longValue));
-    } else if (!strcmp(typeStr, "float")) {
+    } else if (!strcmp(typeStr, "java.lang.Float")) {
         javaClass = v8::Null(isolate);
         value = v8::Number::New(isolate, env->CallFloatMethod(javaObject, floatValue));
-    } else if (!strcmp(typeStr, "double")) {
+    } else if (!strcmp(typeStr, "java.lang.Double")) {
         javaClass = v8::Null(isolate);
         value = v8::Number::New(isolate, env->CallDoubleMethod(javaObject, doubleValue));
-    } else if (!strcmp(typeStr, "boolean")) {
+    } else if (!strcmp(typeStr, "java.lang.Boolean")) {
         javaClass = v8::Null(isolate);
         value = v8::Boolean::New(isolate, env->CallBooleanMethod(javaObject, booleanValue));
-    } else if (!strcmp(typeStr, "char")) {
+    } else if (!strcmp(typeStr, "java.lang.Charactor")) {
         javaClass = v8::Null(isolate);
         value = v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
                 static_cast<jstring>(env->CallObjectMethod(javaObject,
@@ -144,7 +143,7 @@ v8::Local<v8::Value> makeJSReturnValue(
         javaClass = v8::Null(isolate);
         value = v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
                 static_cast<jstring>(javaObject))).ToLocalChecked();
-    } else if (env->CallBooleanMethod(type, isArray)) {
+    } else if (env->CallBooleanMethod(javaObjectClazz, isArray)) {
         jobjectArray javaObjectArray = static_cast<jobjectArray>(javaObject);
         int length = env->GetArrayLength(javaObjectArray);
         javaClass = v8::String::NewFromUtf8Literal(isolate, "array");
@@ -153,12 +152,8 @@ v8::Local<v8::Value> makeJSReturnValue(
 
         for (int index = 0; index < length; index++) {
             jobject element = env->CallStaticObjectMethod(arrayClass, get, javaObjectArray, index);
-
-            jobject elementClass = env->CallObjectMethod(element, getClass);
-            jobject elementComponentType = env->CallObjectMethod(elementClass, getComponentType);
             array->Set(context, index,
-                       makeJSReturnValue(isolate, context, componentType, elementComponentType,
-                                         element)).Check();
+                       makeJSReturnValue(isolate, context, element, false)).Check();
         }
     } else {
         javaClass = v8::String::NewFromUtf8(isolate, typeStr).ToLocalChecked();
@@ -189,7 +184,10 @@ jobject makeJavaReturnValue(
                                                      "(D)Ljava/lang/Double;");
     jmethodID booleanValueOf = env->GetStaticMethodID(booleanClass, "valueOf",
                                                       "(Z)Ljava/lang/Boolean;");
-    if (jsObject->IsInt32()) {
+
+    if (jsObject->IsNull() || jsObject->IsUndefined()) {
+        return nullptr;
+    } else if (jsObject->IsInt32()) {
         return env->CallStaticObjectMethod(integerClass, integerValueOf,
                                            jsObject.As<v8::Int32>()->Value());
     } else if (jsObject->IsBigInt()) {
@@ -210,14 +208,14 @@ jobject makeJavaReturnValue(
         jobjectArray javaArray = env->NewObjectArray(length, javaObjectClass, nullptr);
         for (int index = 0; index < length; index++) {
             v8::Local<v8::Value> element = array->Get(context, index).ToLocalChecked();
-            env->SetObjectArrayElement(javaArray, index,
-                                       makeJavaReturnValue(isolate, context, element));
+            jobject javaReturnValue = makeJavaReturnValue(isolate, context, element);
+            env->SetObjectArrayElement(javaArray, index, javaReturnValue);
         }
     } else if (jsObject->IsObject() &&
                Wrapper::IsWrapped(isolate, context, jsObject.As<v8::Object>())) {
         return Wrapper::Unwrap(isolate, context, jsObject.As<v8::Object>());
     }
-    isolate->ThrowError("Cannot convert JavaScript object to Java object");
+
     return nullptr;
 }
 
@@ -231,25 +229,25 @@ v8::Local<v8::Value> getField(
     JNIEnv *env = Main::env();
     jclass javaBridgeUtil = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jmethodID getField = env->GetStaticMethodID(javaBridgeUtil, "getField",
-                                                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)[Ljava/lang/Object;");
+                                                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;");
 
-    jobjectArray javaObjectArray;
+    jobject javaObject;
     if (!Wrapper::IsWrapped(isolate, context, self)) {
-        javaObjectArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(
+        javaObject = env->CallStaticObjectMethod(
                 javaBridgeUtil,
                 getField,
                 Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
                 Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, fieldName)),
                 nullptr
-        ));
+        );
     } else {
-        javaObjectArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(
+        javaObject = env->CallStaticObjectMethod(
                 javaBridgeUtil,
                 getField,
                 Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className)),
                 Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, fieldName)),
                 Wrapper::Unwrap(isolate, context, self)
-        ));
+        );
     }
 
     if (env->ExceptionCheck()) {
@@ -262,9 +260,8 @@ v8::Local<v8::Value> getField(
     return makeJSReturnValue(
             isolate,
             context,
-            env->GetObjectArrayElement(javaObjectArray, 0),
-            env->GetObjectArrayElement(javaObjectArray, 1),
-            env->GetObjectArrayElement(javaObjectArray, 2)
+            javaObject,
+            false
     );
 }
 
@@ -320,15 +317,17 @@ v8::Local<v8::Value> callMethod(
     JNIEnv *env = Main::env();
     jclass javaBridgeUtil = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jclass javaObjectClass = env->FindClass("java/lang/Object");
+    jclass booleanClass = env->FindClass("java/lang/Boolean");
     jmethodID callMethod = env->GetStaticMethodID(javaBridgeUtil, "callMethod",
                                                   "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;Ljava/lang/Object;)[Ljava/lang/Object;");
+    jmethodID booleanValue = env->GetMethodID(booleanClass, "booleanValue", "()Z");
 
     int length = arguments->Length();
     jobjectArray javaParams = env->NewObjectArray(length, javaObjectClass, nullptr);
     for (int index = 0; index < length; index++) {
         v8::Local<v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
-        env->SetObjectArrayElement(javaParams, index,
-                                   makeJavaReturnValue(isolate, context, jsObject));
+        jobject javaReturnValue = makeJavaReturnValue(isolate, context, jsObject);
+        env->SetObjectArrayElement(javaParams, index, javaReturnValue);
     }
 
     jobjectArray javaObjectArray;
@@ -363,8 +362,7 @@ v8::Local<v8::Value> callMethod(
             isolate,
             context,
             env->GetObjectArrayElement(javaObjectArray, 0),
-            env->GetObjectArrayElement(javaObjectArray, 1),
-            env->GetObjectArrayElement(javaObjectArray, 2)
+            env->CallBooleanMethod(env->GetObjectArrayElement(javaObjectArray, 1), booleanValue)
     );
 }
 
@@ -394,8 +392,8 @@ v8::Local<v8::Value> createJavaObject(
 
     for (int index = 0; index < length; index++) {
         v8::Local<v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
-        env->SetObjectArrayElement(javaParams, index,
-                                   makeJavaReturnValue(isolate, context, jsObject));
+        jobject javaReturnValue = makeJavaReturnValue(isolate, context, jsObject);
+        env->SetObjectArrayElement(javaParams, index, javaReturnValue);
     }
 
     jobject javaObject = env->CallStaticObjectMethod(javaBridgeUtilClass, getConstructor,

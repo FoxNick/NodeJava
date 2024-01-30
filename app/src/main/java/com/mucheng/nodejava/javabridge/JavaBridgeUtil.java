@@ -1,7 +1,5 @@
 package com.mucheng.nodejava.javabridge;
 
-import android.util.Log;
-
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -39,7 +37,7 @@ public final class JavaBridgeUtil {
     return unsafeReflectionEnabled;
   }
 
-  public static Object[] getField(String className, String fieldName, Object target) throws ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
+  public static Object getField(String className, String fieldName, Object target) throws ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
     Class<?> clazz = getClassLoader().loadClass(className);
     Field field = clazz.getDeclaredField(fieldName);
     if (isUnsafeReflectionEnabled()) {
@@ -49,12 +47,65 @@ public final class JavaBridgeUtil {
       }
     }
 
-    return new Object[]{field.getType(), field.getType().getComponentType(), field.get(target)};
+    return field.get(target);
   }
 
   public static void setField(String className, String fieldName, Object value, Object target) throws ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
     Class<?> clazz = getClassLoader().loadClass(className);
     Field field = clazz.getDeclaredField(fieldName);
+
+    Class<?> parameterType = field.getType();
+
+    if (parameterType.isPrimitive()) {
+      if (value == null) {
+        throw new NoSuchFieldException("Can't set field " + className + "." + fieldName + " to " + argumentTypesToString(getArgumentTypes(new Object[]{null})));
+      }
+      parameterType = getReferenceType(parameterType);
+    }
+
+    if (value == null) {
+      field.set(target, null);
+      return;
+    } else {
+
+      Class<?> argumentType = value.getClass();
+      String parameterTypeClassName = parameterType.getName();
+      String argumentTypeClassName = argumentType.getName();
+
+      if (parameterTypeClassName.equals("java.lang.Character")) {
+        if (argumentTypeClassName.equals("java.lang.String") && ((String) value).length() == 1) {
+          field.set(target, ((String) value).charAt(0));
+          return;
+        }
+      }
+
+      if (parameterType.isAssignableFrom(argumentType)) {
+        field.set(target, value);
+        return;
+      }
+
+      if (parameterTypeClassName.equals("java.lang.Byte")) {
+        if (argumentTypeClassName.equals("java.lang.Integer")) {
+          field.set(target, ((Integer) value).byteValue());
+          return;
+        }
+      }
+
+      if (parameterTypeClassName.equals("java.lang.Short")) {
+        if (argumentTypeClassName.equals("java.lang.Integer")) {
+          field.set(target, ((Integer) value).shortValue());
+          return;
+        }
+      }
+
+      if (parameterTypeClassName.equals("java.lang.Float")) {
+        if (argumentTypeClassName.equals("java.lang.Double")) {
+          field.set(target, ((Double) value).floatValue());
+          return;
+        }
+      }
+    }
+
     if (isUnsafeReflectionEnabled()) {
       try {
         field.setAccessible(true);
@@ -62,177 +113,227 @@ public final class JavaBridgeUtil {
       }
     }
 
-    field.set(target, value);
+    throw new NoSuchFieldException("Can't set field " + className + "." + fieldName + " to " + argumentTypesToString(getArgumentTypes(new Object[]{value})));
   }
-  public static Object[] callMethod(String className, String methodName, Object[] arguments, Object target) throws ClassNotFoundException, InvocationTargetException, IllegalAccessException {
+
+  public static Object[] callMethod(String className, String methodName, Object[] arguments, Object target) throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
     Class<?> clazz = getClassLoader().loadClass(className);
     Method[] methods = clazz.getDeclaredMethods();
-    final Object[] finalArguments = new Object[arguments.length];
+    Object[] handledParams = new Object[arguments.length];
 
-    methodLoop:
+    findMethodLoop:
     for (Method method : methods) {
-      Class<?>[] methodParameterTypes = method.getParameterTypes();
-      if (!method.getName().equals(methodName)) {
-        continue;
-      }
-      if (arguments.length != methodParameterTypes.length) {
+
+      if (method.getParameterTypes().length != arguments.length || !method.getName().equals(methodName)) {
         continue;
       }
 
-      for (int index = 0; index < arguments.length; index++) {
-        Class<?> methodParameterType = methodParameterTypes[index];
-        if (methodParameterType.isPrimitive()) {
-          if (arguments[index] == null) {
-            continue methodLoop;
-          }
+      for (int index = 0; index < method.getParameterTypes().length; index++) {
+        Class<?> parameterType = method.getParameterTypes()[index];
+        Object argument = arguments[index];
 
-          String constParameterType = methodParameterType.getName();
-          String argumentType = getReferencePrimitiveType(arguments[index].getClass());
-          if (argumentType == null) {
-            continue methodLoop;
+        if (parameterType.isPrimitive()) {
+          if (argument == null) {
+            continue findMethodLoop;
           }
+          parameterType = getReferenceType(parameterType);
+        }
 
-          if (constParameterType.equals(argumentType)) {
-            finalArguments[index] = arguments[index];
+        if (argument == null) {
+          handledParams[index] = null;
+          continue;
+        }
+
+        Class<?> argumentType = argument.getClass();
+        String parameterTypeClassName = parameterType.getName();
+        String argumentTypeClassName = argumentType.getName();
+
+        if (parameterTypeClassName.equals("java.lang.Character")) {
+          if (argumentTypeClassName.equals("java.lang.String") && ((String) argument).length() == 1) {
+            handledParams[index] = ((String) argument).charAt(0);
             continue;
-          } else if (constParameterType.equals("float") && argumentType.equals("double")) {
-            finalArguments[index] = ((Double) arguments[index]).floatValue();
-            continue;
-          } else if (argumentType.equals("int")) {
-            if (constParameterType.equals("byte")) {
-              finalArguments[index] = ((Integer) arguments[index]).byteValue();
-              continue;
-            } else if (constParameterType.equals("short")) {
-              finalArguments[index] = ((Integer) arguments[index]).shortValue();
-              continue;
-            }
-          } else if (argumentType.equals("string")) {
-            if (constParameterType.equals("char") && ((String) arguments[index]).length() == 1) {
-              finalArguments[index] = ((String) arguments[index]).charAt(0);
-              continue;
-            }
-          }
-
-          continue methodLoop;
-        } else {
-          if (arguments[index] == null) {
-            finalArguments[index] = null;
-            continue;
-          }
-
-          Class<?> argumentClass = arguments[index].getClass();
-          if (methodParameterType.isAssignableFrom(argumentClass)) {
-            finalArguments[index] = arguments[index];
-          } else {
-            continue methodLoop;
           }
         }
-      }
 
-      if (isUnsafeReflectionEnabled()) {
-        try {
-          method.setAccessible(true);
-        } catch (SecurityException ignored) {
+        if (parameterType.isAssignableFrom(argumentType)) {
+          handledParams[index] = argument;
+          continue;
         }
+
+        if (parameterTypeClassName.equals("java.lang.Byte")) {
+          if (argumentTypeClassName.equals("java.lang.Integer")) {
+            handledParams[index] = ((Integer) argument).byteValue();
+            continue;
+          }
+        }
+
+        if (parameterTypeClassName.equals("java.lang.Short")) {
+          if (argumentTypeClassName.equals("java.lang.Integer")) {
+            handledParams[index] = ((Integer) argument).shortValue();
+            continue;
+          }
+        }
+
+        if (parameterTypeClassName.equals("java.lang.Float")) {
+          if (argumentTypeClassName.equals("java.lang.Double")) {
+            handledParams[index] = ((Double) argument).floatValue();
+            continue;
+          }
+        }
+
+        continue findMethodLoop;
       }
 
-      return new Object[]{method.getReturnType(), method.getReturnType().getComponentType(), method.invoke(target, finalArguments)};
+      try {
+        method.setAccessible(true);
+      } catch (SecurityException ignored) {
+      }
+
+      return new Object[]{method.invoke(target, handledParams), isVoid(method)};
+
     }
 
-    String argumentString = Arrays.toString(arguments);
-    throw new IllegalArgumentException("Can't find method " + className + "." + methodName + "(" + argumentString.substring(1, argumentString.length() - 1) + ").");
+    throw new NoSuchMethodException("Can't find method " + className + "." + methodName + "(" + argumentTypesToString(getArgumentTypes(arguments)) + ").");
   }
 
   public static Object getConstructor(String className, Object[] arguments) throws ClassNotFoundException, InvocationTargetException, IllegalAccessException, InstantiationException {
     Class<?> clazz = getClassLoader().loadClass(className);
     Constructor<?>[] constructors = clazz.getDeclaredConstructors();
-    final Object[] finalArguments = new Object[arguments.length];
+    Object[] handledParams = new Object[arguments.length];
 
-    constructorLoop:
+    findConstructorLoop:
     for (Constructor<?> constructor : constructors) {
-      Class<?>[] constructorParameterTypes = constructor.getParameterTypes();
-      if (arguments.length != constructorParameterTypes.length) {
+
+      if (constructor.getParameterTypes().length != arguments.length) {
         continue;
       }
 
-      for (int index = 0; index < arguments.length; index++) {
-        Class<?> constructorParameterType = constructorParameterTypes[index];
-        if (constructorParameterType.isPrimitive()) {
-          if (arguments[index] == null) {
-            continue constructorLoop;
-          }
+      for (int index = 0; index < constructor.getParameterTypes().length; index++) {
+        Class<?> parameterType = constructor.getParameterTypes()[index];
+        Object argument = arguments[index];
 
-          String constParameterType = constructorParameterType.getName();
-          String argumentType = getReferencePrimitiveType(arguments[index].getClass());
-          if (argumentType == null) {
-            continue constructorLoop;
+        if (parameterType.isPrimitive()) {
+          if (argument == null) {
+            continue findConstructorLoop;
           }
+          parameterType = getReferenceType(parameterType);
+        }
 
-          if (constParameterType.equals(argumentType)) {
-            finalArguments[index] = arguments[index];
+        if (argument == null) {
+          handledParams[index] = null;
+          continue;
+        }
+
+        Class<?> argumentType = argument.getClass();
+        String parameterTypeClassName = parameterType.getName();
+        String argumentTypeClassName = argumentType.getName();
+
+        if (parameterTypeClassName.equals("java.lang.Character")) {
+          if (argumentTypeClassName.equals("java.lang.String") && ((String) argument).length() == 1) {
+            handledParams[index] = ((String) argument).charAt(0);
             continue;
-          } else if (constParameterType.equals("float") && argumentType.equals("double")) {
-            finalArguments[index] = ((Double) arguments[index]).floatValue();
-            continue;
-          } else if (argumentType.equals("int")) {
-            if (constParameterType.equals("byte")) {
-              finalArguments[index] = ((Integer) arguments[index]).byteValue();
-              continue;
-            } else if (constParameterType.equals("short")) {
-              finalArguments[index] = ((Integer) arguments[index]).shortValue();
-              continue;
-            }
-          } else if (argumentType.equals("string")) {
-            if (constParameterType.equals("char") && ((String) arguments[index]).length() == 1) {
-              finalArguments[index] = ((String) arguments[index]).charAt(0);
-              continue;
-            }
-          }
-
-          continue constructorLoop;
-        } else {
-          if (arguments[index] == null) {
-            finalArguments[index] = null;
-            continue;
-          }
-
-          Class<?> argumentClass = arguments[index].getClass();
-          if (constructorParameterType.isAssignableFrom(argumentClass)) {
-            finalArguments[index] = arguments[index];
-          } else {
-            continue constructorLoop;
           }
         }
+
+        if (parameterType.isAssignableFrom(argumentType)) {
+          handledParams[index] = argument;
+          continue;
+        }
+
+        if (parameterTypeClassName.equals("java.lang.Byte")) {
+          if (argumentTypeClassName.equals("java.lang.Integer")) {
+            handledParams[index] = ((Integer) argument).byteValue();
+            continue;
+          }
+        }
+
+        if (parameterTypeClassName.equals("java.lang.Short")) {
+          if (argumentTypeClassName.equals("java.lang.Integer")) {
+            handledParams[index] = ((Integer) argument).shortValue();
+            continue;
+          }
+        }
+
+        if (parameterTypeClassName.equals("java.lang.Float")) {
+          if (argumentTypeClassName.equals("java.lang.Double")) {
+            handledParams[index] = ((Double) argument).floatValue();
+            continue;
+          }
+        }
+
+        continue findConstructorLoop;
       }
 
-      if (isUnsafeReflectionEnabled()) {
-        try {
-          constructor.setAccessible(true);
-        } catch (SecurityException ignored) {
-        }
+      try {
+        constructor.setAccessible(true);
+      } catch (SecurityException ignored) {
       }
-      return constructor.newInstance(finalArguments);
+
+      return constructor.newInstance(handledParams);
+
     }
 
-    String argumentString = Arrays.toString(arguments);
-    throw new IllegalArgumentException("Can't find constructor " + className + "(" + argumentString.substring(1, argumentString.length() - 1) + ").");
+    throw new InstantiationException("Can't find constructor " + className + "(" + argumentTypesToString(getArgumentTypes(arguments)) + ").");
   }
 
-  private static String getReferencePrimitiveType(Class<?> referenceClazz) {
-    switch (referenceClazz.getName()) {
-      case "java.lang.Integer":
-        return "int";
-      case "java.lang.Long":
-        return "long";
-      case "java.lang.Double":
-        return "double";
-      case "java.lang.Boolean":
-        return "boolean";
-      case "java.lang.String":
-        return "string";
-      default:
-        return null;
+  private static String argumentTypesToString(Class<?>[] argumentTypes) {
+    StringBuilder stringBuilder = new StringBuilder();
+    for (int index = 0; index < argumentTypes.length; index++) {
+      Class<?> argumentType = argumentTypes[index];
+      if (argumentType == null) {
+        stringBuilder.append("null");
+      } else {
+        stringBuilder.append(argumentTypes[index].getName());
+      }
+      if (index + 1 < argumentTypes.length) {
+        stringBuilder.append(", ");
+      }
     }
+    return stringBuilder.toString();
+  }
+
+  private static Class<?> getReferenceType(Class<?> clazz) {
+    if (!clazz.isPrimitive()) {
+      return clazz;
+    }
+
+    switch (clazz.getName()) {
+      case "void":
+        return Void.class;
+      case "byte":
+        return Byte.class;
+      case "short":
+        return Short.class;
+      case "int":
+        return Integer.class;
+      case "long":
+        return Long.class;
+      case "float":
+        return Float.class;
+      case "double":
+        return Double.class;
+      case "char":
+        return Character.class;
+      default:
+        return Boolean.class;
+    }
+  }
+
+  private static boolean isVoid(Method method) {
+    return method.getReturnType().getName().equals("void");
+  }
+
+  private static Class<?>[] getArgumentTypes(Object[] arguments) {
+    Class<?>[] classes = new Class[arguments.length];
+    for (int index = 0; index < classes.length; index++) {
+      Object argument = arguments[index];
+      if (argument == null) {
+        classes[index] = null;
+      } else {
+        classes[index] = argument.getClass();
+      }
+    }
+    return classes;
   }
 
 }

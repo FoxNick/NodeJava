@@ -104,7 +104,8 @@
         Object.defineProperty(constructor, "class", {
             get: function() {
                 return $java.classForName(className);
-            }
+            },
+            set: () => false
         });
 
         constructor[$java.className] = className;
@@ -157,6 +158,5 @@
 })();
 $java.setUnsafeReflectionEnabled(true);
 
-const test2 = $java.findClass("com.mucheng.nodejava.test.Test");
-test2.w = 50;
-console.log(test2.class);
+const clazz = $java.findClass("com.mucheng.nodejava.MainActivity");
+clazz.getCurrentMainActivity().get().finish();

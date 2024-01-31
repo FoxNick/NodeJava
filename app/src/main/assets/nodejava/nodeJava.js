@@ -91,6 +91,7 @@
 
             $java.__makeReference(this, $java.__createJavaObject(className, args));
         });
+
         installJavaMethodAndFields([constructor, constructor.prototype], className, classInfo.staticMethods, classInfo.staticFields);
         installJavaMethodAndFields([constructor.prototype], className, classInfo.methods, classInfo.fields);
 
@@ -156,7 +157,3 @@
 
     globalThis["$java"] = $java;
 })();
-$java.setUnsafeReflectionEnabled(true);
-
-const clazz = $java.findClass("com.mucheng.nodejava.MainActivity");
-clazz.getCurrentMainActivity().get().finish();

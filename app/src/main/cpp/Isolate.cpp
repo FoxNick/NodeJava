@@ -18,6 +18,7 @@ Isolate::Isolate() {
             Main::platform,
             allocator
     );
+
 }
 
 void Isolate::To(jobject instance, Isolate *self) {

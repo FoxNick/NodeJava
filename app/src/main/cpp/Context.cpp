@@ -40,7 +40,7 @@ Java_com_mucheng_nodejava_core_Context_nativeCreateContext(JNIEnv *env, jobject 
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobject thiz,
-                                                             jstring source) {
+                                                             jstring pwd) {
     Context *context = Context::From(thiz);
     Isolate *isolate = context->isolate;
 
@@ -54,7 +54,7 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
     });
 
     v8::MaybeLocal<v8::Value> result;
-    if (source == nullptr) {
+    if (pwd == nullptr) {
         result = LoadEnvironment(context->environment,
                                  [&](const node::StartExecutionCallbackInfo &info) -> v8::MaybeLocal<v8::Value> {
                                      v8::EscapableHandleScope escapableHandleScope(isolate->self);
@@ -62,7 +62,9 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
                                              v8::Undefined(isolate->self));
                                  });
     } else {
-        result = LoadEnvironment(context->environment, Util::JavaStr2CStr(source));
+        std::string source = std::string("globalThis.require = require('module').createRequire('") +
+                             Util::JavaStr2CStr(pwd) + "/');";
+        result = LoadEnvironment(context->environment, source.c_str());
     }
 
     if (result.IsEmpty()) {
@@ -128,7 +130,7 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
             v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
                     context->self.Get(isolate->self), tryCatch.Exception());
             if (stackTrace.IsEmpty()) {
-                LOGE("Uncaught Compiling Error: %s",
+                LOGE("Uncaught Script Compiling Error: %s",
                      *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
             } else {
                 Util::ThrowScriptCompilingException(
@@ -146,7 +148,7 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
             v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
                     context->self.Get(isolate->self), tryCatch.Exception());
             if (stackTrace.IsEmpty()) {
-                LOGE("Uncaught Runtime Error: %s",
+                LOGE("Uncaught Script Runtime Error: %s",
                      *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
             } else {
                 Util::ThrowScriptRuntimeException(

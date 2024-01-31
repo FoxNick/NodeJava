@@ -184,9 +184,11 @@ public final class JavaBridgeUtil {
         continue findMethodLoop;
       }
 
-      try {
-        method.setAccessible(true);
-      } catch (SecurityException ignored) {
+      if (isUnsafeReflectionEnabled()) {
+        try {
+          method.setAccessible(true);
+        } catch (SecurityException ignored) {
+        }
       }
 
       return new Object[]{method.invoke(target, handledParams), isVoid(method)};
@@ -264,9 +266,11 @@ public final class JavaBridgeUtil {
         continue findConstructorLoop;
       }
 
-      try {
-        constructor.setAccessible(true);
-      } catch (SecurityException ignored) {
+      if (isUnsafeReflectionEnabled()) {
+        try {
+          constructor.setAccessible(true);
+        } catch (SecurityException ignored) {
+        }
       }
 
       return constructor.newInstance(handledParams);

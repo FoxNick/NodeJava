@@ -1,9 +1,13 @@
 package com.mucheng.nodejava.javabridge;
 
+import android.util.Log;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.Arrays;
 
 /**
@@ -50,57 +54,92 @@ public final class JavaBridgeUtil {
     return field.get(target);
   }
 
-  public static void setField(String className, String fieldName, Object value, Object target) throws ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
+  public static void setField(String className, String fieldName, Object argument, Object target) throws ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
     Class<?> clazz = getClassLoader().loadClass(className);
     Field field = clazz.getDeclaredField(fieldName);
 
     Class<?> parameterType = field.getType();
 
     if (parameterType.isPrimitive()) {
-      if (value == null) {
+      if (argument == null) {
         throw new NoSuchFieldException("Can't set field " + className + "." + fieldName + " to " + argumentTypesToString(getArgumentTypes(new Object[]{null})));
       }
       parameterType = getReferenceType(parameterType);
     }
 
-    if (value == null) {
+    if (argument == null) {
       field.set(target, null);
       return;
     } else {
 
-      Class<?> argumentType = value.getClass();
+      Class<?> argumentType = argument.getClass();
       String parameterTypeClassName = parameterType.getName();
       String argumentTypeClassName = argumentType.getName();
 
       if (parameterTypeClassName.equals("java.lang.Character")) {
-        if (argumentTypeClassName.equals("java.lang.String") && ((String) value).length() == 1) {
-          field.set(target, ((String) value).charAt(0));
+        if (argumentTypeClassName.equals("java.lang.String") && ((String) argument).length() == 1) {
+          field.set(target, ((String) argument).charAt(0));
           return;
         }
       }
 
       if (parameterType.isAssignableFrom(argumentType)) {
-        field.set(target, value);
+        field.set(target, argument);
         return;
+      }
+
+      if (parameterType.isInterface()) {
+        if (argumentTypeClassName.equals("com.mucheng.nodejava.javabridge.Interface")) {
+          int methodCount = parameterType.getMethods().length;
+          final Interface asInterface = (Interface) argument;
+          if (methodCount > 1 && asInterface.isFunction()) {
+            throw new IllegalArgumentException();
+          }
+
+          final boolean isFunction = asInterface.isFunction();
+          final Thread originalThread = Thread.currentThread();
+
+          field.set(target, Proxy.newProxyInstance(getClassLoader(), new Class[]{parameterType}, new InvocationHandler() {
+
+            @Override
+            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+              Thread currentThread = Thread.currentThread();
+              if (originalThread != currentThread) {
+                throw new IllegalStateException("Cannot run in another thread");
+              }
+
+              if (args == null) {
+                args = new Object[0];
+              }
+
+              if (isFunction) {
+                return asInterface.invoke(args);
+              }
+              return asInterface.invoke(method.getName(), args);
+            }
+
+          }));
+          return;
+        }
       }
 
       if (parameterTypeClassName.equals("java.lang.Byte")) {
         if (argumentTypeClassName.equals("java.lang.Integer")) {
-          field.set(target, ((Integer) value).byteValue());
+          field.set(target, ((Integer) argument).byteValue());
           return;
         }
       }
 
       if (parameterTypeClassName.equals("java.lang.Short")) {
         if (argumentTypeClassName.equals("java.lang.Integer")) {
-          field.set(target, ((Integer) value).shortValue());
+          field.set(target, ((Integer) argument).shortValue());
           return;
         }
       }
 
       if (parameterTypeClassName.equals("java.lang.Float")) {
         if (argumentTypeClassName.equals("java.lang.Double")) {
-          field.set(target, ((Double) value).floatValue());
+          field.set(target, ((Double) argument).floatValue());
           return;
         }
       }
@@ -113,7 +152,7 @@ public final class JavaBridgeUtil {
       }
     }
 
-    throw new NoSuchFieldException("Can't set field " + className + "." + fieldName + " to " + argumentTypesToString(getArgumentTypes(new Object[]{value})));
+    throw new NoSuchFieldException("Can't set field " + className + "." + fieldName + " to " + argumentTypesToString(getArgumentTypes(new Object[]{argument})));
   }
 
   public static Object[] callMethod(String className, String methodName, Object[] arguments, Object target) throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
@@ -158,6 +197,41 @@ public final class JavaBridgeUtil {
         if (parameterType.isAssignableFrom(argumentType)) {
           handledParams[index] = argument;
           continue;
+        }
+
+        if (parameterType.isInterface()) {
+          if (argumentTypeClassName.equals("com.mucheng.nodejava.javabridge.Interface")) {
+            int methodCount = parameterType.getMethods().length;
+            final Interface asInterface = (Interface) argument;
+            if (methodCount > 1 && asInterface.isFunction()) {
+              throw new IllegalArgumentException();
+            }
+
+            final boolean isFunction = asInterface.isFunction();
+            final Thread originalThread = Thread.currentThread();
+
+            handledParams[index] = Proxy.newProxyInstance(getClassLoader(), new Class[]{parameterType}, new InvocationHandler() {
+
+              @Override
+              public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                Thread currentThread = Thread.currentThread();
+                if (originalThread != currentThread) {
+                  throw new IllegalStateException("Cannot run in another thread");
+                }
+
+                if (args == null) {
+                  args = new Object[0];
+                }
+
+                if (isFunction) {
+                  return asInterface.invoke(args);
+                }
+                return asInterface.invoke(method.getName(), args);
+              }
+
+            });
+            continue;
+          }
         }
 
         if (parameterTypeClassName.equals("java.lang.Byte")) {
@@ -242,6 +316,41 @@ public final class JavaBridgeUtil {
           continue;
         }
 
+        if (parameterType.isInterface()) {
+          if (argumentTypeClassName.equals("com.mucheng.nodejava.javabridge.Interface")) {
+            int methodCount = parameterType.getMethods().length;
+            final Interface asInterface = (Interface) argument;
+            if (methodCount > 1 && asInterface.isFunction()) {
+              throw new IllegalArgumentException();
+            }
+
+            final boolean isFunction = asInterface.isFunction();
+            final Thread originalThread = Thread.currentThread();
+
+            handledParams[index] = Proxy.newProxyInstance(getClassLoader(), new Class[]{parameterType}, new InvocationHandler() {
+
+              @Override
+              public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                Thread currentThread = Thread.currentThread();
+                if (originalThread != currentThread) {
+                  throw new IllegalStateException("Cannot run in another thread");
+                }
+
+                if (args == null) {
+                  args = new Object[0];
+                }
+
+                if (isFunction) {
+                  return asInterface.invoke(args);
+                }
+                return asInterface.invoke(method.getName(), args);
+              }
+
+            });
+            continue;
+          }
+        }
+
         if (parameterTypeClassName.equals("java.lang.Byte")) {
           if (argumentTypeClassName.equals("java.lang.Integer")) {
             handledParams[index] = ((Integer) argument).byteValue();
@@ -286,6 +395,8 @@ public final class JavaBridgeUtil {
       Class<?> argumentType = argumentTypes[index];
       if (argumentType == null) {
         stringBuilder.append("null");
+      } else if (argumentType.getName().equals("com.mucheng.nodejava.javabridge.Interface")) {
+        stringBuilder.append("interface");
       } else {
         stringBuilder.append(argumentTypes[index].getName());
       }

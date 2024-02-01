@@ -2,7 +2,7 @@
 #include "main.h"
 #include "log.h"
 #include "javabridge/ClassInfo.h"
-#include "javabridge//Wrapper.h"
+#include "javabridge/Wrapper.h"
 #include "Util.h"
 
 v8::Local<v8::Value> makeJSReturnValue(
@@ -17,6 +17,42 @@ jobject makeJavaReturnValue(
         v8::Local<v8::Context> context,
         v8::Local<v8::Value> jsObject
 );
+
+class Interface {
+public:
+    v8::Isolate *isolate;
+    v8::Persistent<v8::Context> context;
+    v8::Persistent<v8::Value> value;
+
+    Interface(
+            v8::Isolate *isolate,
+            v8::Local<v8::Context> context,
+            v8::Local<v8::Value> value
+    );
+
+    static void To(jobject instance, Interface *self);
+
+    static Interface *From(jobject instance);
+};
+
+Interface::Interface(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        v8::Local<v8::Value> value
+) {
+    this->isolate = isolate;
+    this->context.Reset(isolate, context);
+    this->value.Reset(isolate, value);
+}
+
+void Interface::To(jobject instance, Interface *self) {
+    Util::SetPtr(instance, "interfacePtr", self);
+}
+
+Interface *Interface::From(jobject instance) {
+    return Util::GetPtrAs<Interface *>(instance, "interfacePtr");
+}
+
 
 v8::Local<v8::Value> getClassInfo(
         v8::Isolate *isolate,
@@ -173,10 +209,12 @@ jobject makeJavaReturnValue(
         v8::Local<v8::Value> jsObject
 ) {
     JNIEnv *env = Main::env();
+    jclass javaObjectClass = env->FindClass("java/lang/Object");
     jclass integerClass = env->FindClass("java/lang/Integer");
     jclass longClass = env->FindClass("java/lang/Long");
     jclass doubleClass = env->FindClass("java/lang/Double");
     jclass booleanClass = env->FindClass("java/lang/Boolean");
+    jclass interfaceClass = env->FindClass("com/mucheng/nodejava/javabridge/Interface");
     jmethodID integerValueOf = env->GetStaticMethodID(integerClass, "valueOf",
                                                       "(I)Ljava/lang/Integer;");
     jmethodID longValueOf = env->GetStaticMethodID(longClass, "valueOf", "(J)Ljava/lang/Long;");
@@ -204,7 +242,6 @@ jobject makeJavaReturnValue(
     } else if (jsObject->IsArray()) {
         v8::Local<v8::Array> array = jsObject.As<v8::Array>();
         int length = array->Length();
-        jclass javaObjectClass = env->FindClass("java/lang/Object");
         jobjectArray javaArray = env->NewObjectArray(length, javaObjectClass, nullptr);
         for (int index = 0; index < length; index++) {
             v8::Local<v8::Value> element = array->Get(context, index).ToLocalChecked();
@@ -214,6 +251,11 @@ jobject makeJavaReturnValue(
     } else if (jsObject->IsObject() &&
                Wrapper::IsWrapped(isolate, context, jsObject.As<v8::Object>())) {
         return Wrapper::Unwrap(isolate, context, jsObject.As<v8::Object>());
+    } else if (jsObject->IsObject()) {
+        jobject interfaceObject = env->AllocObject(interfaceClass);
+        Interface *interface = new Interface(isolate, context, jsObject);
+        Interface::To(interfaceObject, interface);
+        return interfaceObject;
     }
 
     return nullptr;
@@ -532,4 +574,68 @@ void JAVA_ACCESSOR_BINDING(
             }).ToLocalChecked()
     ).Check();
 
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_mucheng_nodejava_javabridge_Interface_nativeIsFunction(JNIEnv *env, jobject thiz) {
+    Interface *interface = Interface::From(thiz);
+    v8::Isolate *isolate = interface->isolate;
+    return interface->value.Get(isolate)->IsFunction();
+}
+
+extern "C"
+JNIEXPORT jobject JNICALL
+Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke___3Ljava_lang_Object_2(JNIEnv *env,
+                                                                                   jobject thiz,
+                                                                                   jobjectArray params) {
+    Interface *interface = Interface::From(thiz);
+    v8::Isolate *isolate = interface->isolate;
+    v8::Local<v8::Context> context = interface->context.Get(isolate);
+    v8::Local<v8::Function> value = interface->value.Get(isolate).As<v8::Function>();
+    int length = env->GetArrayLength(params);
+    v8::Local<v8::Value> jsParams[length];
+    for (int index = 0; index < length; index++) {
+        jsParams[index] = makeJSReturnValue(isolate, context,
+                                            env->GetObjectArrayElement(params, index),
+                                            false);
+    }
+
+    v8::MaybeLocal<v8::Value> result = value->Call(context, context->Global(), length,
+                                                   jsParams).ToLocalChecked();
+    if (result.IsEmpty()) {
+        return nullptr;
+    }
+
+    return makeJavaReturnValue(isolate, context, result.ToLocalChecked());
+}
+
+extern "C"
+JNIEXPORT jobject JNICALL
+Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2_3Ljava_lang_Object_2(
+        JNIEnv *env, jobject thiz, jstring methodNameStr, jobjectArray params) {
+    Interface *interface = Interface::From(thiz);
+    v8::Isolate *isolate = interface->isolate;
+    v8::Local<v8::Context> context = interface->context.Get(isolate);
+    v8::Local<v8::Object> value = interface->value.Get(isolate).As<v8::Object>();
+    v8::Local<v8::String> methodName = v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
+            methodNameStr)).ToLocalChecked();
+
+    v8::Local<v8::Function> fn = value->Get(context,
+                                            methodName).ToLocalChecked().As<v8::Function>();
+    int length = env->GetArrayLength(params);
+    v8::Local<v8::Value> jsParams[length];
+    for (int index = 0; index < length; index++) {
+        jsParams[index] = makeJSReturnValue(isolate, context,
+                                            env->GetObjectArrayElement(params, index),
+                                            false);
+    }
+
+    v8::MaybeLocal<v8::Value> result = fn->Call(context, context->Global(), length,
+                                                jsParams).ToLocalChecked();
+    if (result.IsEmpty()) {
+        return nullptr;
+    }
+
+    return makeJavaReturnValue(isolate, context, result.ToLocalChecked());
 }

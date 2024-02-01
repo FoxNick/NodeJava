@@ -24,11 +24,11 @@ class MainActivity : Activity() {
         extraAssets()
 
         val isolate = Isolate()
-
         val context = Context(isolate, filesDir.absolutePath)
         context.injectJavaBridge()
         context.evaluateScript(File(filesDir, "nodeJava.js").readText())
         context.evaluateScript(File(filesDir, "main.js").readText())
+        context.spinEventLoop()
     }
 
     private fun extraAssets() {

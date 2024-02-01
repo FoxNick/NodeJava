@@ -62,9 +62,10 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
                                              v8::Undefined(isolate->self));
                                  });
     } else {
-        std::string source = std::string("globalThis.require = require('module').createRequire('") +
-                             Util::JavaStr2CStr(pwd) + "/');";
-        result = LoadEnvironment(context->environment, source.c_str());
+        std::string cPwd = Util::JavaStr2CStr(pwd);
+        std::string chdir = std::string("process.chdir('" + cPwd + "');");
+        std::string require = std::string("globalThis.require = require('module').createRequire(process.cwd() + '/');");
+        result = LoadEnvironment(context->environment, (chdir + require).c_str());
     }
 
     if (result.IsEmpty()) {
@@ -87,6 +88,10 @@ extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_mucheng_nodejava_core_Context_nativeSpinEventLoop(JNIEnv *env, jobject thiz) {
     Context *context = Context::From(thiz);
+    Isolate *isolate = context->isolate;
+    SETUP_ISOLATE_CLASS();
+    SETUP_CONTEXT_CLASS();
+
     return SpinEventLoop(context->environment).FromMaybe(1) == 0;
 }
 

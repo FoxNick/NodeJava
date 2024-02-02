@@ -6,8 +6,10 @@ import android.util.Log
 import com.mucheng.nodejava.core.Context
 import com.mucheng.nodejava.core.Isolate
 import com.mucheng.nodejava.core.Locker
+import com.mucheng.nodejava.core.Unlocker
 import java.io.File
 import java.lang.ref.WeakReference
+import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
 
@@ -28,7 +30,16 @@ class MainActivity : Activity() {
         context.injectJavaBridge()
         context.evaluateScript(File(filesDir, "nodeJava.js").readText())
         context.evaluateScript(File(filesDir, "main.js").readText())
-        context.spinEventLoop()
+
+        thread {
+            Locker.lock(isolate)
+            context.spinEventLoop()
+        }
+
+        thread {
+            Thread.sleep(1200)
+            context.stop()
+        }
     }
 
     private fun extraAssets() {

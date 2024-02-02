@@ -35,10 +35,6 @@ public class Context {
     nativeStop();
   }
 
-  public void emitProcessExit() {
-    nativeEmitProcessExit();
-  }
-
   public void injectJavaBridge() {
     nativeInjectJavaBridge();
   }
@@ -52,8 +48,6 @@ public class Context {
   private native boolean nativeSpinEventLoop();
 
   private native void nativeStop();
-
-  private native void nativeEmitProcessExit();
 
   private native void nativeInjectJavaBridge();
 

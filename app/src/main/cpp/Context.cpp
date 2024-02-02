@@ -32,10 +32,13 @@ Context *Context::From(jobject instance) {
 jobject getApplicationContext() {
     JNIEnv *env = Main::env();
     jclass activityThread = env->FindClass("android/app/ActivityThread");
-    jmethodID currentActivityThread = env->GetStaticMethodID(activityThread, "currentActivityThread", "()Landroid/app/ActivityThread;");
+    jmethodID currentActivityThread = env->GetStaticMethodID(activityThread,
+                                                             "currentActivityThread",
+                                                             "()Landroid/app/ActivityThread;");
     jobject at = env->CallStaticObjectMethod(activityThread, currentActivityThread);
 
-    jmethodID getApplication = env->GetMethodID(activityThread, "getApplication", "()Landroid/app/Application;");
+    jmethodID getApplication = env->GetMethodID(activityThread, "getApplication",
+                                                "()Landroid/app/Application;");
     jobject context = env->CallObjectMethod(at, getApplication);
     return context;
 }
@@ -45,7 +48,8 @@ jstring getFilesDirAbsolutePath() {
     jclass contextClass = env->FindClass("android/content/Context");
     jclass fileClass = env->FindClass("java/io/File");
     jmethodID getFilesDir = env->GetMethodID(contextClass, "getFilesDir", "()Ljava/io/File;");
-    jmethodID getAbsolutePath = env->GetMethodID(fileClass, "getAbsolutePath", "()Ljava/lang/String;");
+    jmethodID getAbsolutePath = env->GetMethodID(fileClass, "getAbsolutePath",
+                                                 "()Ljava/lang/String;");
     jobject context = getApplicationContext();
     jobject filesDir = env->CallObjectMethod(context, getFilesDir);
     return static_cast<jstring>(env->CallObjectMethod(filesDir, getAbsolutePath));
@@ -80,12 +84,14 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
     if (pwd == nullptr) {
         std::string cPwd = Util::JavaStr2CStr(getFilesDirAbsolutePath());
         std::string chdir = std::string("process.chdir('" + cPwd + "');");
-        std::string require = std::string("globalThis.require = require('module').createRequire(process.cwd() + '/');");
+        std::string require = std::string(
+                "globalThis.require = require('module').createRequire(process.cwd() + '/');");
         result = LoadEnvironment(context->environment, (chdir + require).c_str());
     } else {
         std::string cPwd = Util::JavaStr2CStr(pwd);
         std::string chdir = std::string("process.chdir('" + cPwd + "');");
-        std::string require = std::string("globalThis.require = require('module').createRequire(process.cwd() + '/');");
+        std::string require = std::string(
+                "globalThis.require = require('module').createRequire(process.cwd() + '/');");
         result = LoadEnvironment(context->environment, (chdir + require).c_str());
     }
 
@@ -94,8 +100,8 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
             v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
                     context->self.Get(isolate->self), tryCatch.Exception());
             if (stackTrace.IsEmpty()) {
-                LOGE("Uncaught Environment Error: %s",
-                     *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
+                Util::ThrowNodeException(
+                        *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
             } else {
                 Util::ThrowNodeException(
                         *v8::String::Utf8Value(isolate->self, stackTrace.ToLocalChecked()));
@@ -125,13 +131,6 @@ Java_com_mucheng_nodejava_core_Context_nativeStop(JNIEnv *env, jobject thiz) {
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_mucheng_nodejava_core_Context_nativeEmitProcessExit(JNIEnv *env, jobject thiz) {
-    Context *context = Context::From(thiz);
-    EmitProcessExit(context->environment);
-}
-
-extern "C"
-JNIEXPORT void JNICALL
 Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject thiz,
                                                             jstring script) {
     Context *context = Context::From(thiz);
@@ -156,8 +155,8 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
             v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
                     context->self.Get(isolate->self), tryCatch.Exception());
             if (stackTrace.IsEmpty()) {
-                LOGE("Uncaught Script Compiling Error: %s",
-                     *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
+                Util::ThrowScriptCompilingException(
+                        *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
             } else {
                 Util::ThrowScriptCompilingException(
                         *v8::String::Utf8Value(isolate->self, stackTrace.ToLocalChecked()));
@@ -174,8 +173,8 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
             v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
                     context->self.Get(isolate->self), tryCatch.Exception());
             if (stackTrace.IsEmpty()) {
-                LOGE("Uncaught Script Runtime Error: %s",
-                     *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
+                Util::ThrowScriptRuntimeException(
+                        *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
             } else {
                 Util::ThrowScriptRuntimeException(
                         *v8::String::Utf8Value(isolate->self, stackTrace.ToLocalChecked()));

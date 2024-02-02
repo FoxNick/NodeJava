@@ -474,7 +474,8 @@ public:
     AsyncOrSyncCallback(Interface *interface, jstring methodNameStr, jobjectArray params);
 };
 
-AsyncOrSyncCallback::AsyncOrSyncCallback(Interface *interface, jstring methodNameStr, jobjectArray params) {
+AsyncOrSyncCallback::AsyncOrSyncCallback(Interface *interface, jstring methodNameStr,
+                                         jobjectArray params) {
     this->interface = interface;
     this->methodNameStr = methodNameStr;
     this->params = params;
@@ -489,6 +490,7 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
     v8::Isolate *isolate = interface->isolate;
     v8::Local<v8::Context> context = interface->context.Get(isolate);
     JNIEnv *env = Main::env();
+
     if (methodNameStr == nullptr) {
         v8::Local<v8::Function> value = interface->value.Get(isolate).As<v8::Function>();
         int length = env->GetArrayLength(params);
@@ -500,7 +502,7 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
         }
 
         v8::MaybeLocal<v8::Value> result = value->Call(context, context->Global(), length,
-                                                       jsParams).ToLocalChecked();
+                                                       jsParams);
         if (result.IsEmpty()) {
             asyncCall->result = nullptr;
             asyncCall->done = true;
@@ -530,7 +532,7 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
         }
 
         v8::MaybeLocal<v8::Value> result = fn->Call(context, context->Global(), length,
-                                                    jsParams).ToLocalChecked();
+                                                    jsParams);
         if (result.IsEmpty()) {
             asyncCall->result = nullptr;
             asyncCall->done = true;
@@ -565,7 +567,23 @@ void JAVA_ACCESSOR_BINDING(
                 if (!queue.empty()) {
                     AsyncOrSyncCallback *call = queue.front();
                     queue.pop();
+
+                    v8::Isolate *isolate = info.GetIsolate();
+                    v8::Local<v8::Context> context = isolate->GetCurrentContext();
+                    v8::TryCatch tryCatch(isolate);
                     asyncOrSyncCall(call, true);
+
+                    if (tryCatch.HasCaught()) {
+                        v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
+                                context, tryCatch.Exception());
+                        if (stackTrace.IsEmpty()) {
+                            Util::ThrowNodeException(
+                                    *v8::String::Utf8Value(isolate, tryCatch.Exception()));
+                        } else {
+                            Util::ThrowNodeException(
+                                    *v8::String::Utf8Value(isolate, stackTrace.ToLocalChecked()));
+                        }
+                    }
                 }
             }).ToLocalChecked()
     }).ToLocalChecked();

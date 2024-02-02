@@ -29,6 +29,28 @@ Context *Context::From(jobject instance) {
     return Util::GetPtrAs<Context *>(instance, "contextPtr");
 }
 
+jobject getApplicationContext() {
+    JNIEnv *env = Main::env();
+    jclass activityThread = env->FindClass("android/app/ActivityThread");
+    jmethodID currentActivityThread = env->GetStaticMethodID(activityThread, "currentActivityThread", "()Landroid/app/ActivityThread;");
+    jobject at = env->CallStaticObjectMethod(activityThread, currentActivityThread);
+
+    jmethodID getApplication = env->GetMethodID(activityThread, "getApplication", "()Landroid/app/Application;");
+    jobject context = env->CallObjectMethod(at, getApplication);
+    return context;
+}
+
+jstring getFilesDirAbsolutePath() {
+    JNIEnv *env = Main::env();
+    jclass contextClass = env->FindClass("android/content/Context");
+    jclass fileClass = env->FindClass("java/io/File");
+    jmethodID getFilesDir = env->GetMethodID(contextClass, "getFilesDir", "()Ljava/io/File;");
+    jmethodID getAbsolutePath = env->GetMethodID(fileClass, "getAbsolutePath", "()Ljava/lang/String;");
+    jobject context = getApplicationContext();
+    jobject filesDir = env->CallObjectMethod(context, getFilesDir);
+    return static_cast<jstring>(env->CallObjectMethod(filesDir, getAbsolutePath));
+}
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_mucheng_nodejava_core_Context_nativeCreateContext(JNIEnv *env, jobject thiz,
@@ -37,6 +59,7 @@ Java_com_mucheng_nodejava_core_Context_nativeCreateContext(JNIEnv *env, jobject 
     Context *context = new Context(isolate);
     Context::To(thiz, context);
 }
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobject thiz,
@@ -55,12 +78,10 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
 
     v8::MaybeLocal<v8::Value> result;
     if (pwd == nullptr) {
-        result = LoadEnvironment(context->environment,
-                                 [&](const node::StartExecutionCallbackInfo &info) -> v8::MaybeLocal<v8::Value> {
-                                     v8::EscapableHandleScope escapableHandleScope(isolate->self);
-                                     return escapableHandleScope.Escape(
-                                             v8::Undefined(isolate->self));
-                                 });
+        std::string cPwd = Util::JavaStr2CStr(getFilesDirAbsolutePath());
+        std::string chdir = std::string("process.chdir('" + cPwd + "');");
+        std::string require = std::string("globalThis.require = require('module').createRequire(process.cwd() + '/');");
+        result = LoadEnvironment(context->environment, (chdir + require).c_str());
     } else {
         std::string cPwd = Util::JavaStr2CStr(pwd);
         std::string chdir = std::string("process.chdir('" + cPwd + "');");

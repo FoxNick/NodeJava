@@ -4,6 +4,10 @@
 #include "javabridge/ClassInfo.h"
 #include "javabridge/Wrapper.h"
 #include "Util.h"
+#include "uv.h"
+#include <queue>
+#include <mutex>
+#include <unistd.h>
 
 v8::Local<v8::Value> makeJSReturnValue(
         v8::Isolate *isolate,
@@ -53,6 +57,11 @@ Interface *Interface::From(jobject instance) {
     return Util::GetPtrAs<Interface *>(instance, "interfacePtr");
 }
 
+pthread_t v8ThreadId;
+
+bool v8ThreadIdEquals(pthread_t a, pthread_t b) {
+    return pthread_equal(a, b);
+}
 
 v8::Local<v8::Value> getClassInfo(
         v8::Isolate *isolate,
@@ -454,6 +463,90 @@ v8::Local<v8::Value> createJavaObject(
     return v8::External::New(isolate, env->NewGlobalRef(javaObject));
 }
 
+class AsyncOrSyncCallback {
+public:
+    Interface *interface;
+    jstring methodNameStr;
+    jobjectArray params;
+    jobject result;
+    bool done;
+
+    AsyncOrSyncCallback(Interface *interface, jstring methodNameStr, jobjectArray params);
+};
+
+AsyncOrSyncCallback::AsyncOrSyncCallback(Interface *interface, jstring methodNameStr, jobjectArray params) {
+    this->interface = interface;
+    this->methodNameStr = methodNameStr;
+    this->params = params;
+}
+
+std::queue<AsyncOrSyncCallback *> queue;
+
+void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
+    Interface *interface = asyncCall->interface;
+    jstring methodNameStr = asyncCall->methodNameStr;
+    jobjectArray params = asyncCall->params;
+    v8::Isolate *isolate = interface->isolate;
+    v8::Local<v8::Context> context = interface->context.Get(isolate);
+    JNIEnv *env = Main::env();
+    if (methodNameStr == nullptr) {
+        v8::Local<v8::Function> value = interface->value.Get(isolate).As<v8::Function>();
+        int length = env->GetArrayLength(params);
+        v8::Local<v8::Value> jsParams[length];
+        for (int index = 0; index < length; index++) {
+            jsParams[index] = makeJSReturnValue(isolate, context,
+                                                env->GetObjectArrayElement(params, index),
+                                                false);
+        }
+
+        v8::MaybeLocal<v8::Value> result = value->Call(context, context->Global(), length,
+                                                       jsParams).ToLocalChecked();
+        if (result.IsEmpty()) {
+            asyncCall->result = nullptr;
+            asyncCall->done = true;
+            return;
+        }
+
+        jobject javaResult = makeJavaReturnValue(isolate, context, result.ToLocalChecked());
+        if (crossThread) {
+            javaResult = env->NewGlobalRef(javaResult);
+        }
+        asyncCall->result = javaResult;
+        asyncCall->done = true;
+        return;
+    } else {
+        v8::Local<v8::Object> value = interface->value.Get(isolate).As<v8::Object>();
+        v8::Local<v8::String> methodName = v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
+                methodNameStr)).ToLocalChecked();
+
+        v8::Local<v8::Function> fn = value->Get(context,
+                                                methodName).ToLocalChecked().As<v8::Function>();
+        int length = env->GetArrayLength(params);
+        v8::Local<v8::Value> jsParams[length];
+        for (int index = 0; index < length; index++) {
+            jsParams[index] = makeJSReturnValue(isolate, context,
+                                                env->GetObjectArrayElement(params, index),
+                                                false);
+        }
+
+        v8::MaybeLocal<v8::Value> result = fn->Call(context, context->Global(), length,
+                                                    jsParams).ToLocalChecked();
+        if (result.IsEmpty()) {
+            asyncCall->result = nullptr;
+            asyncCall->done = true;
+            return;
+        }
+
+        jobject javaResult = makeJavaReturnValue(isolate, context, result.ToLocalChecked());
+        if (crossThread) {
+            javaResult = env->NewGlobalRef(javaResult);
+        }
+        asyncCall->result = javaResult;
+        asyncCall->done = true;
+        return;
+    }
+}
+
 void JAVA_ACCESSOR_BINDING(
         v8::Local<v8::Object> exports,
         v8::Local<v8::Value>,
@@ -461,6 +554,22 @@ void JAVA_ACCESSOR_BINDING(
         void *priv
 ) {
     v8::Isolate *isolate = context->GetIsolate();
+
+    v8::Local<v8::Object> process = context->Global()->Get(context,
+                                                           v8::String::NewFromUtf8Literal(isolate,
+                                                                                          "process")).ToLocalChecked().As<v8::Object>();
+    v8::Local<v8::Function> nextTick = process->Get(context, v8::String::NewFromUtf8Literal(isolate,
+                                                                                            "nextTick")).ToLocalChecked().As<v8::Function>();
+    nextTick->Call(context, context->Global(), 1, new v8::Local<v8::Value>[1]{
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                if (!queue.empty()) {
+                    AsyncOrSyncCallback *call = queue.front();
+                    queue.pop();
+                    asyncOrSyncCall(call, true);
+                }
+            }).ToLocalChecked()
+    }).ToLocalChecked();
+
 
     exports->Set(
             context,
@@ -586,56 +695,22 @@ Java_com_mucheng_nodejava_javabridge_Interface_nativeIsFunction(JNIEnv *env, job
 
 extern "C"
 JNIEXPORT jobject JNICALL
-Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke___3Ljava_lang_Object_2(JNIEnv *env,
-                                                                                   jobject thiz,
-                                                                                   jobjectArray params) {
-    Interface *interface = Interface::From(thiz);
-    v8::Isolate *isolate = interface->isolate;
-    v8::Local<v8::Context> context = interface->context.Get(isolate);
-    v8::Local<v8::Function> value = interface->value.Get(isolate).As<v8::Function>();
-    int length = env->GetArrayLength(params);
-    v8::Local<v8::Value> jsParams[length];
-    for (int index = 0; index < length; index++) {
-        jsParams[index] = makeJSReturnValue(isolate, context,
-                                            env->GetObjectArrayElement(params, index),
-                                            false);
-    }
-
-    v8::MaybeLocal<v8::Value> result = value->Call(context, context->Global(), length,
-                                                   jsParams).ToLocalChecked();
-    if (result.IsEmpty()) {
-        return nullptr;
-    }
-
-    return makeJavaReturnValue(isolate, context, result.ToLocalChecked());
-}
-
-extern "C"
-JNIEXPORT jobject JNICALL
 Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2_3Ljava_lang_Object_2(
         JNIEnv *env, jobject thiz, jstring methodNameStr, jobjectArray params) {
     Interface *interface = Interface::From(thiz);
-    v8::Isolate *isolate = interface->isolate;
-    v8::Local<v8::Context> context = interface->context.Get(isolate);
-    v8::Local<v8::Object> value = interface->value.Get(isolate).As<v8::Object>();
-    v8::Local<v8::String> methodName = v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
-            methodNameStr)).ToLocalChecked();
-
-    v8::Local<v8::Function> fn = value->Get(context,
-                                            methodName).ToLocalChecked().As<v8::Function>();
-    int length = env->GetArrayLength(params);
-    v8::Local<v8::Value> jsParams[length];
-    for (int index = 0; index < length; index++) {
-        jsParams[index] = makeJSReturnValue(isolate, context,
-                                            env->GetObjectArrayElement(params, index),
-                                            false);
+    if (v8ThreadIdEquals(v8ThreadId, pthread_self())) {
+        AsyncOrSyncCallback call = AsyncOrSyncCallback(interface, methodNameStr, params);
+        asyncOrSyncCall(&call, false);
+        return call.result;
+    } else {
+        AsyncOrSyncCallback call = AsyncOrSyncCallback(
+                interface,
+                (jstring) (methodNameStr != nullptr ? env->NewGlobalRef(methodNameStr)
+                                                    : methodNameStr),
+                (jobjectArray) (params != nullptr ? env->NewGlobalRef(params) : params)
+        );
+        queue.push(&call);
+        while (!call.done);
+        return call.result;
     }
-
-    v8::MaybeLocal<v8::Value> result = fn->Call(context, context->Global(), length,
-                                                jsParams).ToLocalChecked();
-    if (result.IsEmpty()) {
-        return nullptr;
-    }
-
-    return makeJavaReturnValue(isolate, context, result.ToLocalChecked());
 }

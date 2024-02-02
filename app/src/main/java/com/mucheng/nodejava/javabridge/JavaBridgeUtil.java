@@ -1,14 +1,11 @@
 package com.mucheng.nodejava.javabridge;
 
-import android.util.Log;
-
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.Arrays;
 
 /**
  * @noinspection unused
@@ -97,23 +94,19 @@ public final class JavaBridgeUtil {
           }
 
           final boolean isFunction = asInterface.isFunction();
-          final Thread originalThread = Thread.currentThread();
 
           field.set(target, Proxy.newProxyInstance(getClassLoader(), new Class[]{parameterType}, new InvocationHandler() {
 
             @Override
             public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
               Thread currentThread = Thread.currentThread();
-              if (originalThread != currentThread) {
-                throw new IllegalStateException("Cannot run in another thread");
-              }
 
               if (args == null) {
                 args = new Object[0];
               }
 
               if (isFunction) {
-                return asInterface.invoke(args);
+                return asInterface.invoke(null, args);
               }
               return asInterface.invoke(method.getName(), args);
             }
@@ -143,6 +136,14 @@ public final class JavaBridgeUtil {
           return;
         }
       }
+
+      if (parameterTypeClassName.equals("java.lang.Long")) {
+        if (argumentTypeClassName.equals("java.lang.Integer")) {
+          field.set(target, ((Integer) argument).longValue());
+          return;
+        }
+      }
+
     }
 
     if (isUnsafeReflectionEnabled()) {
@@ -208,23 +209,18 @@ public final class JavaBridgeUtil {
             }
 
             final boolean isFunction = asInterface.isFunction();
-            final Thread originalThread = Thread.currentThread();
 
             handledParams[index] = Proxy.newProxyInstance(getClassLoader(), new Class[]{parameterType}, new InvocationHandler() {
 
               @Override
               public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                Thread currentThread = Thread.currentThread();
-                if (originalThread != currentThread) {
-                  throw new IllegalStateException("Cannot run in another thread");
-                }
 
                 if (args == null) {
                   args = new Object[0];
                 }
 
                 if (isFunction) {
-                  return asInterface.invoke(args);
+                  return asInterface.invoke(null, args);
                 }
                 return asInterface.invoke(method.getName(), args);
               }
@@ -251,6 +247,13 @@ public final class JavaBridgeUtil {
         if (parameterTypeClassName.equals("java.lang.Float")) {
           if (argumentTypeClassName.equals("java.lang.Double")) {
             handledParams[index] = ((Double) argument).floatValue();
+            continue;
+          }
+        }
+
+        if (parameterTypeClassName.equals("java.lang.Long")) {
+          if (argumentTypeClassName.equals("java.lang.Integer")) {
+            handledParams[index] = ((Integer) argument).longValue();
             continue;
           }
         }
@@ -325,23 +328,18 @@ public final class JavaBridgeUtil {
             }
 
             final boolean isFunction = asInterface.isFunction();
-            final Thread originalThread = Thread.currentThread();
 
             handledParams[index] = Proxy.newProxyInstance(getClassLoader(), new Class[]{parameterType}, new InvocationHandler() {
 
               @Override
               public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                Thread currentThread = Thread.currentThread();
-                if (originalThread != currentThread) {
-                  throw new IllegalStateException("Cannot run in another thread");
-                }
 
                 if (args == null) {
                   args = new Object[0];
                 }
 
                 if (isFunction) {
-                  return asInterface.invoke(args);
+                  return asInterface.invoke(null, args);
                 }
                 return asInterface.invoke(method.getName(), args);
               }
@@ -368,6 +366,13 @@ public final class JavaBridgeUtil {
         if (parameterTypeClassName.equals("java.lang.Float")) {
           if (argumentTypeClassName.equals("java.lang.Double")) {
             handledParams[index] = ((Double) argument).floatValue();
+            continue;
+          }
+        }
+
+        if (parameterTypeClassName.equals("java.lang.Long")) {
+          if (argumentTypeClassName.equals("java.lang.Integer")) {
+            handledParams[index] = ((Integer) argument).longValue();
             continue;
           }
         }

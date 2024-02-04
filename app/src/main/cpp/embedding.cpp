@@ -8,6 +8,7 @@
 #include <queue>
 #include <mutex>
 #include <unistd.h>
+#include <memory>
 
 v8::Local<v8::Value> makeJSReturnValue(
         v8::Isolate *isolate,
@@ -482,6 +483,7 @@ AsyncOrSyncCallback::AsyncOrSyncCallback(Interface *interface, jstring methodNam
 }
 
 std::queue<AsyncOrSyncCallback *> queue;
+std::mutex queueMutex;
 
 void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
     Interface *interface = asyncCall->interface;
@@ -567,23 +569,7 @@ void JAVA_ACCESSOR_BINDING(
                 if (!queue.empty()) {
                     AsyncOrSyncCallback *call = queue.front();
                     queue.pop();
-
-                    v8::Isolate *isolate = info.GetIsolate();
-                    v8::Local<v8::Context> context = isolate->GetCurrentContext();
-                    v8::TryCatch tryCatch(isolate);
                     asyncOrSyncCall(call, true);
-
-                    if (tryCatch.HasCaught()) {
-                        v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
-                                context, tryCatch.Exception());
-                        if (stackTrace.IsEmpty()) {
-                            Util::ThrowNodeException(
-                                    *v8::String::Utf8Value(isolate, tryCatch.Exception()));
-                        } else {
-                            Util::ThrowNodeException(
-                                    *v8::String::Utf8Value(isolate, stackTrace.ToLocalChecked()));
-                        }
-                    }
                 }
             }).ToLocalChecked()
     }).ToLocalChecked();
@@ -727,7 +713,9 @@ Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2
                                                     : methodNameStr),
                 (jobjectArray) (params != nullptr ? env->NewGlobalRef(params) : params)
         );
+        queueMutex.lock();
         queue.push(&call);
+        queueMutex.unlock();
         while (!call.done);
         return call.result;
     }

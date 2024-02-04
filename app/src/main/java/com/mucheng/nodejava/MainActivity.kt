@@ -35,11 +35,6 @@ class MainActivity : Activity() {
             Locker.lock(isolate)
             context.spinEventLoop()
         }
-
-        thread {
-            Thread.sleep(1200)
-            context.stop()
-        }
     }
 
     private fun extraAssets() {

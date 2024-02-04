@@ -32,20 +32,6 @@ jstring Util::CStr2JavaStr(const char *cStr) {
     return Main::env()->NewStringUTF(cStr);
 }
 
-void Util::ThrowScriptCompilingException(const char *message) {
-    Main::env()->ThrowNew(
-            Main::env()->FindClass("com/mucheng/nodejava/core/exception/ScriptCompilingException"),
-            message
-    );
-}
-
-void Util::ThrowScriptRuntimeException(const char *message) {
-    Main::env()->ThrowNew(
-            Main::env()->FindClass("com/mucheng/nodejava/core/exception/ScriptRuntimeException"),
-            message
-    );
-}
-
 void Util::ThrowNodeException(const char *message) {
     Main::env()->ThrowNew(
             Main::env()->FindClass("com/mucheng/nodejava/core/exception/NodeException"),

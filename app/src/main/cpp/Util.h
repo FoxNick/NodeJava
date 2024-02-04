@@ -19,10 +19,6 @@ namespace Util {
 
     void ThrowExceptionToJS(v8::Isolate *isolate, jthrowable throwable);
 
-    void ThrowScriptCompilingException(const char *message);
-
-    void ThrowScriptRuntimeException(const char *message);
-
     void ThrowNodeException(const char *message);
 
     template<typename Class>

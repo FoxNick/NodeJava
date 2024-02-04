@@ -12,7 +12,7 @@ public:
     node::Environment *environment;
     v8::Persistent<v8::Context> self;
 
-    Context(Isolate *isolate);
+    Context(Isolate *pEnvironment);
 
     static void To(jobject instance, Context *self);
 

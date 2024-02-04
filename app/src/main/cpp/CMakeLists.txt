@@ -41,7 +41,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/include/node
-)
+        )
 
 add_library(node SHARED IMPORTED)
 set_target_properties(node PROPERTIES IMPORTED_LOCATION

@@ -55,4 +55,5 @@ android {
 }
 
 dependencies {
+    implementation(files("libs/smali-2.5.2.jar"))
 }

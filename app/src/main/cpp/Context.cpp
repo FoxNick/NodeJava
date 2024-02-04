@@ -5,6 +5,8 @@
 #include "log.h"
 #include "embedding.h"
 #include <jni.h>
+#include <sstream>
+#include <iostream>
 
 Context::Context(Isolate *isolate) {
     this->isolate = isolate;
@@ -19,6 +21,12 @@ Context::Context(Isolate *isolate) {
             Main::initializationResult->exec_args(),
             node::EnvironmentFlags::kOwnsProcessState
     );
+
+    v8::Context::Scope contextScope(self.Get(isolate->self));
+    SetProcessExitHandler(environment, [&](node::Environment *pEnvironment, int exitCode) {
+        // Prevent Node.js to terminate isolate
+        Stop(pEnvironment, node::StopFlags::kDoNotTerminateIsolate);
+    });
 }
 
 void Context::To(jobject instance, Context *self) {
@@ -75,11 +83,6 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
     SETUP_CONTEXT_CLASS();
 
     v8::TryCatch tryCatch(isolate->self);
-    SetProcessExitHandler(context->environment, [](node::Environment *environment, int exitCode) {
-        Stop(environment, node::StopFlags::kDoNotTerminateIsolate);
-        LOGE("Process ExitCode: %d", exitCode);
-    });
-
     v8::MaybeLocal<v8::Value> result;
     if (pwd == nullptr) {
         std::string cPwd = Util::JavaStr2CStr(getFilesDirAbsolutePath());
@@ -109,6 +112,30 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
         }
         return;
     }
+
+    // Setup default Uncaught Exception Handler
+    v8::Local<v8::Object> globalObject = context->self.Get(isolate->self)->Global();
+    v8::Local<v8::Object> processObject = globalObject->Get(
+            context->self.Get(isolate->self),
+            v8::String::NewFromUtf8Literal(isolate->self,
+                                           "process")).ToLocalChecked().As<v8::Object>();
+
+    v8::Local<v8::Function> onFunction = processObject->Get(context->self.Get(isolate->self),
+                                                            v8::String::NewFromUtf8Literal(
+                                                                    isolate->self,
+                                                                    "on")).ToLocalChecked().As<v8::Function>();
+
+    onFunction->Call(context->self.Get(isolate->self), processObject, 2, new v8::Local<v8::Value>[]{
+            v8::String::NewFromUtf8Literal(isolate->self, "uncaughtException"),
+            v8::Function::New(context->self.Get(isolate->self),
+                              [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                                  v8::Isolate *isolate = info.GetIsolate();
+                                  v8::Local<v8::Object> err = info[0].As<v8::Object>();
+                                  const char *cStr = *v8::String::Utf8Value(isolate, err);
+                                  LOGE("Uncaught Exception: %s", cStr);
+                                  Util::ThrowNodeException(cStr);
+                              }).ToLocalChecked()
+    }).ToLocalChecked();
 }
 
 extern "C"
@@ -139,29 +166,12 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
     SETUP_ISOLATE_CLASS();
     SETUP_CONTEXT_CLASS();
 
-    v8::TryCatch tryCatch(isolate->self);
-    SetProcessExitHandler(context->environment, [](node::Environment *environment, int exitCode) {
-        Stop(environment, node::StopFlags::kDoNotTerminateIsolate);
-        LOGE("Process ExitCode: %d", exitCode);
-    });
-
     v8::MaybeLocal<v8::Script> compiling = v8::Script::Compile(context->self.Get(isolate->self),
                                                                v8::String::NewFromUtf8(
                                                                        isolate->self,
                                                                        Util::JavaStr2CStr(
                                                                                script)).ToLocalChecked());
     if (compiling.IsEmpty()) {
-        if (tryCatch.HasCaught()) {
-            v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
-                    context->self.Get(isolate->self), tryCatch.Exception());
-            if (stackTrace.IsEmpty()) {
-                Util::ThrowScriptCompilingException(
-                        *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
-            } else {
-                Util::ThrowScriptCompilingException(
-                        *v8::String::Utf8Value(isolate->self, stackTrace.ToLocalChecked()));
-            }
-        }
         return;
     }
 
@@ -169,17 +179,6 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
             context->self.Get(isolate->self));
 
     if (running.IsEmpty()) {
-        if (tryCatch.HasCaught()) {
-            v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
-                    context->self.Get(isolate->self), tryCatch.Exception());
-            if (stackTrace.IsEmpty()) {
-                Util::ThrowScriptRuntimeException(
-                        *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
-            } else {
-                Util::ThrowScriptRuntimeException(
-                        *v8::String::Utf8Value(isolate->self, stackTrace.ToLocalChecked()));
-            }
-        }
         return;
     }
 }

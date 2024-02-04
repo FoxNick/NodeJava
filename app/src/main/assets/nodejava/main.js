@@ -2,17 +2,13 @@ require("./rhino").install();
 
 $java.setUnsafeReflectionEnabled(true);
 
-const ctx = com.mucheng.nodejava.MainActivity.currentMainActivity.get();
-
-class MyButton extends android.widget.Button {
-    constructor(context) {
-        super(context);
+const thread = java.lang.Thread(() => {
+    console.log("exec")
+    while (true) {
+        java.lang.Thread.sleep(500)
     }
+    console.log("Wtf")
+});
+thread.start();
 
-    onDraw(canvas) {
-        console.log(canvas);
-    }
-}
-
-const btn = new MyButton(ctx);
-ctx.setContentView(btn);
+setInterval(() => console.log('ticked'), 200);

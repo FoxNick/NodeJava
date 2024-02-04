@@ -11,7 +11,7 @@
         }
     }
 
-    function installJavaMethodAndFields(objects, className, methods, fields) {
+    function installJavaMethodAndFields(object, className, methods, fields) {
         const methodNames = new Set();
         methods.forEach(method => {
             const methodName = method.name;
@@ -24,9 +24,7 @@
             const func = functionWithName(displayMethodName, function () {
                 return invoke(this, Array.prototype.slice.call(arguments));
             });
-            objects.forEach(object => {
-                object[methodName] = func;
-            });
+            object[methodName] = func;
         });
 
         fields.forEach(field => {
@@ -47,9 +45,7 @@
                     $java.__setField(className, fieldName, value, this);
                 }
             }
-            objects.forEach(object => {
-                Object.defineProperty(object, fieldName, attributes);
-            });
+            Object.defineProperty(object, fieldName, attributes);
         });
     }
 
@@ -92,13 +88,12 @@
             $java.__makeReference(this, $java.__createJavaObject(className, args));
         });
 
-        installJavaMethodAndFields([constructor, constructor.prototype], className, classInfo.staticMethods, classInfo.staticFields);
-        installJavaMethodAndFields([constructor.prototype], className, classInfo.methods, classInfo.fields);
+        installJavaMethodAndFields(constructor, className, classInfo.staticMethods, classInfo.staticFields);
+        installJavaMethodAndFields(constructor.prototype, className, classInfo.methods, classInfo.fields);
 
         if (classInfo.superclass) {
             const superclass = $java.findClass(classInfo.superclass);
             Object.setPrototypeOf(constructor.prototype, superclass.prototype);
-            Object.setPrototypeOf(constructor, superclass);
         }
 
         installInnerClasses(constructor, classInfo.classes);
@@ -153,6 +148,58 @@
             configurable: true,
             value: name
         });
+    }
+
+    $java.defineClass = async function (jsClass, options) {
+        if (!jsClass.name) {
+            throw new Error(`class does not has name: ${jsClass}`);
+        }
+        const className = (options?.packageName ? options.packageName + "." : "") + jsClass.name;
+
+        let clazz = jsClass;
+        const methods = new Set();
+        while (true) {
+            const proto = clazz?.prototype;
+            if (!clazz || !proto) {
+                throw new Error(`not a class or class does not extend java class: ${jsClass}`);
+            }
+            if (clazz.hasOwnProperty($java.className)) {
+                break;
+            }
+            Object.getOwnPropertyNames(proto)
+                .filter(property => typeof proto[property])
+                .forEach(method => methods.add(method));;
+            clazz = Object.getPrototypeOf(clazz);
+        }
+        methods.delete("constructor");
+
+        const path = require("path");
+        const fs = require("fs/promises");
+
+        const interfaceNames = (options?.implements || []).map(it => it.class.getName());
+        const superclassName = clazz[$java.className];
+        let outputDexFile = options?.cacheDexFile;
+        if (!outputDexFile) {
+            const name = superclassName + ":" + [, ...interfaceNames].join(',') + ";methods:" + [...methods].join(',');
+            const md5 = require("crypto").createHash("md5").update(name).digest("hex");
+            outputDexFile = path.join(process.cwd(), ".codecache", `${className}_${md5}_v1.dex`);
+        }
+        let exists;
+        try {
+            await fs.access(outputDexFile);
+            exists = true;
+        } catch (e) {
+            exists = false;
+        }
+        let generatedClass;
+        if (exists) {
+
+        } else {
+
+        }
+        Object.setPrototypeOf(jsClass, generatedClass);
+        Object.setPrototypeOf(jsClass.prototype, generatedClass.prototype);
+        return jsClass;
     }
 
     globalThis["$java"] = $java;

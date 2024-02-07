@@ -1,19 +1,11 @@
 package com.mucheng.nodejava;
 
-import android.view.View;
+import android.app.Activity;
 
-public class Test implements View.OnClickListener, Runnable {
-  @Override
-  public void onClick(View v) {
+public class Test extends Activity {
 
-  }
-
-  @Override
-  public void run() {
-
-  }
-
-  public void w(int p, double c, String wtf) {
+  public Test() {
+    super();
   }
 
 }

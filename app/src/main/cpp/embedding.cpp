@@ -427,7 +427,7 @@ void makeReference(
     Wrapper::WrapTo(isolate, context, target, static_cast<jobject>(value->Value()));
 }
 
-v8::Local<v8::Value> defineClass(
+void defineClass(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
         v8::Local<v8::String> className,
@@ -437,7 +437,7 @@ v8::Local<v8::Value> defineClass(
         v8::Local<v8::String> outputDexFile
 );
 
-v8::Local<v8::Value> defineClass(
+void defineClass(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
         v8::Local<v8::String> className,
@@ -450,7 +450,7 @@ v8::Local<v8::Value> defineClass(
     jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jclass stringClass = env->FindClass("java/lang/String");
     jmethodID defineClass = env->GetStaticMethodID(javaBridgeUtilClass, "defineClass",
-                                                   "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;");
+                                                   "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)V");
     jobject javaClassName = Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className));
     jobject javaSuperclass = Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, superclass));
 
@@ -475,7 +475,7 @@ v8::Local<v8::Value> defineClass(
     }
 
     jobject javaOutputDexFile = Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, outputDexFile));
-    jobject result = env->CallStaticObjectMethod(
+    env->CallStaticVoidMethod(
             javaBridgeUtilClass, defineClass,
             javaClassName, javaSuperclass, javaImplementations, javaMethods, javaOutputDexFile
     );
@@ -483,12 +483,8 @@ v8::Local<v8::Value> defineClass(
         jthrowable throwable = env->ExceptionOccurred();
         env->ExceptionClear();
         Util::ThrowExceptionToJS(isolate, throwable);
-        return v8::Null(isolate);
+        return;
     }
-    if (result != nullptr) {
-        result = env->NewGlobalRef(result);
-    }
-    return makeJSReturnValue(isolate, context, result, false);
 };
 
 v8::Local<v8::Value> createJavaObject(
@@ -728,11 +724,9 @@ void JAVA_ACCESSOR_BINDING(
                 v8::Local<v8::Array> implementations = info[2].As<v8::Array>();
                 v8::Local<v8::Array> methods = info[3].As<v8::Array>();
                 v8::Local<v8::String> outputDexFile = info[4].As<v8::String>();
-                info.GetReturnValue().Set(
-                        defineClass(isolate, context, className, superclass, implementations,
-                                    methods,
-                                    outputDexFile)
-                );
+                defineClass(isolate, context, className, superclass, implementations,
+                            methods,
+                            outputDexFile);
             }).ToLocalChecked()
     ).Check();
 

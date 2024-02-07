@@ -30,11 +30,7 @@ class MainActivity : Activity() {
         context.injectJavaBridge()
         context.evaluateScript(File(filesDir, "nodeJava.js").readText())
         context.evaluateScript(File(filesDir, "main.js").readText())
-
-        thread {
-            Locker.lock(isolate)
-            context.spinEventLoop()
-        }
+        context.spinEventLoop()
     }
 
     private fun extraAssets() {

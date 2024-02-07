@@ -2,6 +2,7 @@ package com.mucheng.nodejava.javabridge;
 
 import com.android.dx.Code;
 import com.android.dx.DexMaker;
+import com.android.dx.Local;
 import com.android.dx.MethodId;
 import com.android.dx.TypeId;
 
@@ -471,7 +472,7 @@ public final class JavaBridgeUtil {
     return classes;
   }
 
-  private static Object defineClass(
+  private static void defineClass(
     String className,
     String superclass,
     String[] implementations,
@@ -482,14 +483,15 @@ public final class JavaBridgeUtil {
 
     DexMaker dexMaker = new DexMaker();
 
-    TypeId<?> currentClass = TypeId.get("L" + className.replaceAll("\\.", "/") + ";");
-    TypeId<?> superClass = TypeId.get(superJavaClass);
-    TypeId<?>[] interfaces = new TypeId[implementations.length];
+    TypeId currentClass = TypeId.get("L" + className.replaceAll("\\.", "/") + ";");
+    TypeId superClass = TypeId.get(superJavaClass);
+    TypeId[] interfaces = new TypeId[implementations.length];
     for (int index = 0; index < interfaces.length; index++) {
       interfaces[index] = TypeId.get(classLoader.loadClass(implementations[index]));
     }
     dexMaker.declare(currentClass, "", Modifier.PUBLIC, superClass, interfaces);
     generateConstructors(dexMaker, currentClass, superJavaClass);
+    generateMethods(dexMaker, currentClass, methods, superJavaClass);
 
     byte[] byteArray = dexMaker.generate();
 
@@ -497,7 +499,12 @@ public final class JavaBridgeUtil {
     fileOutputStream.write(byteArray);
     fileOutputStream.flush();
     fileOutputStream.close();
-    return null;
+
+    loadDex(outputDexFile);
+  }
+
+  private static void generateMethods(DexMaker dexMaker, TypeId currentClass, String[] methodNames, Class<?> superJavaClass) {
+
   }
 
   private static void generateConstructors(DexMaker dexMaker, TypeId<?> currentClass, Class<?> superJavaClass) {
@@ -508,8 +515,15 @@ public final class JavaBridgeUtil {
         Class<?> parameterType = declaredConstructor.getParameterTypes()[index];
         typeIdParameters[index] = TypeId.get(parameterType);
       }
-      MethodId<?, ?> methodId = currentClass.getConstructor(typeIdParameters);
+      MethodId methodId = currentClass.getConstructor(typeIdParameters);
+      MethodId superMethodId = TypeId.get(superJavaClass).getConstructor(typeIdParameters);
       Code code = dexMaker.declare(methodId, declaredConstructor.getModifiers());
+      Local self = code.getThis(currentClass);
+      Local[] parameters = new Local[typeIdParameters.length];
+      for (int index = 0;index < parameters.length;index++) {
+        parameters[index] = code.getParameter(index, typeIdParameters[index]);
+      }
+      code.invokeDirect(superMethodId, null, self, parameters);
       code.returnVoid();
     }
   }

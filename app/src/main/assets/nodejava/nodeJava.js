@@ -157,7 +157,7 @@
 
         console.log(className, superclass, interfaces, methods, outputDexFile);
 
-        await $java.getReturnValue($java.__defineClass(className, superclass, interfaces, methods, outputDexFile));
+        $java.__defineClass(className, superclass, interfaces, methods, outputDexFile);
         return $java.findClass(className);
     }
 

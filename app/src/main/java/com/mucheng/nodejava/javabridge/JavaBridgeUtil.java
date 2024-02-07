@@ -1,11 +1,21 @@
 package com.mucheng.nodejava.javabridge;
 
+import com.android.dx.Code;
+import com.android.dx.DexMaker;
+import com.android.dx.MethodId;
+import com.android.dx.TypeId;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
+
+import dalvik.system.PathClassLoader;
 
 /**
  * @noinspection unused
@@ -13,6 +23,8 @@ import java.lang.reflect.Proxy;
 public final class JavaBridgeUtil {
 
   private static boolean unsafeReflectionEnabled;
+
+  private static ClassLoader classLoader;
 
   private JavaBridgeUtil() {
   }
@@ -27,7 +39,10 @@ public final class JavaBridgeUtil {
   }
 
   private static ClassLoader getClassLoader() {
-    return JavaBridgeUtil.class.getClassLoader();
+    if (classLoader == null) {
+      classLoader = Thread.currentThread().getContextClassLoader();
+    }
+    return classLoader;
   }
 
   public static void setUnsafeReflectionEnabled(boolean isEnabled) {
@@ -454,6 +469,53 @@ public final class JavaBridgeUtil {
       }
     }
     return classes;
+  }
+
+  private static Object defineClass(
+    String className,
+    String superclass,
+    String[] implementations,
+    String[] methods,
+    String outputDexFile
+  ) throws ClassNotFoundException, IOException {
+    Class<?> superJavaClass = getClassLoader().loadClass(superclass);
+
+    DexMaker dexMaker = new DexMaker();
+
+    TypeId<?> currentClass = TypeId.get("L" + className.replaceAll("\\.", "/") + ";");
+    TypeId<?> superClass = TypeId.get(superJavaClass);
+    TypeId<?>[] interfaces = new TypeId[implementations.length];
+    for (int index = 0; index < interfaces.length; index++) {
+      interfaces[index] = TypeId.get(classLoader.loadClass(implementations[index]));
+    }
+    dexMaker.declare(currentClass, "", Modifier.PUBLIC, superClass, interfaces);
+    generateConstructors(dexMaker, currentClass, superJavaClass);
+
+    byte[] byteArray = dexMaker.generate();
+
+    FileOutputStream fileOutputStream = new FileOutputStream(outputDexFile);
+    fileOutputStream.write(byteArray);
+    fileOutputStream.flush();
+    fileOutputStream.close();
+    return null;
+  }
+
+  private static void generateConstructors(DexMaker dexMaker, TypeId<?> currentClass, Class<?> superJavaClass) {
+    Constructor<?>[] declaredConstructors = superJavaClass.getDeclaredConstructors();
+    for (Constructor<?> declaredConstructor : declaredConstructors) {
+      TypeId<?>[] typeIdParameters = new TypeId[declaredConstructor.getParameterTypes().length];
+      for (int index = 0; index < typeIdParameters.length; index++) {
+        Class<?> parameterType = declaredConstructor.getParameterTypes()[index];
+        typeIdParameters[index] = TypeId.get(parameterType);
+      }
+      MethodId<?, ?> methodId = currentClass.getConstructor(typeIdParameters);
+      Code code = dexMaker.declare(methodId, declaredConstructor.getModifiers());
+      code.returnVoid();
+    }
+  }
+
+  private static void loadDex(String dex) {
+    classLoader = new PathClassLoader(dex, classLoader);
   }
 
 }

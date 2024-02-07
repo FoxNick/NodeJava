@@ -427,6 +427,70 @@ void makeReference(
     Wrapper::WrapTo(isolate, context, target, static_cast<jobject>(value->Value()));
 }
 
+v8::Local<v8::Value> defineClass(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        v8::Local<v8::String> className,
+        v8::Local<v8::String> superclass,
+        v8::Local<v8::Array> implementations,
+        v8::Local<v8::Array> methods,
+        v8::Local<v8::String> outputDexFile
+);
+
+v8::Local<v8::Value> defineClass(
+        v8::Isolate *isolate,
+        v8::Local<v8::Context> context,
+        v8::Local<v8::String> className,
+        v8::Local<v8::String> superclass,
+        v8::Local<v8::Array> implementations,
+        v8::Local<v8::Array> methods,
+        v8::Local<v8::String> outputDexFile
+) {
+    JNIEnv *env = Main::env();
+    jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
+    jclass stringClass = env->FindClass("java/lang/String");
+    jmethodID defineClass = env->GetStaticMethodID(javaBridgeUtilClass, "defineClass",
+                                                   "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;");
+    jobject javaClassName = Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, className));
+    jobject javaSuperclass = Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, superclass));
+
+    int implementationLength = implementations->Length();
+    jobjectArray javaImplementations = env->NewObjectArray(implementationLength, stringClass,
+                                                           nullptr);
+    for (int index = 0; index < implementationLength; index++) {
+        jobject implementation = Util::CStr2JavaStr(*v8::String::Utf8Value(isolate,
+                                                                           implementations->Get(
+                                                                                   context,
+                                                                                   index).ToLocalChecked().As<v8::String>()));
+        env->SetObjectArrayElement(javaImplementations, index, implementation);
+    }
+
+    int methodLength = methods->Length();
+    jobjectArray javaMethods = env->NewObjectArray(methodLength, stringClass,
+                                                   nullptr);
+    for (int index = 0; index < methodLength; index++) {
+        jobject method = Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, methods->Get(context,
+                                                                                         index).ToLocalChecked().As<v8::String>()));
+        env->SetObjectArrayElement(javaMethods, index, method);
+    }
+
+    jobject javaOutputDexFile = Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, outputDexFile));
+    jobject result = env->CallStaticObjectMethod(
+            javaBridgeUtilClass, defineClass,
+            javaClassName, javaSuperclass, javaImplementations, javaMethods, javaOutputDexFile
+    );
+    if (env->ExceptionCheck()) {
+        jthrowable throwable = env->ExceptionOccurred();
+        env->ExceptionClear();
+        Util::ThrowExceptionToJS(isolate, throwable);
+        return v8::Null(isolate);
+    }
+    if (result != nullptr) {
+        result = env->NewGlobalRef(result);
+    }
+    return makeJSReturnValue(isolate, context, result, false);
+};
+
 v8::Local<v8::Value> createJavaObject(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
@@ -574,7 +638,6 @@ void JAVA_ACCESSOR_BINDING(
             }).ToLocalChecked()
     }).ToLocalChecked();
 
-
     exports->Set(
             context,
             v8::String::NewFromUtf8Literal(isolate, "className"),
@@ -652,6 +715,40 @@ void JAVA_ACCESSOR_BINDING(
                 SETUP_CALLBACK_INFO();
                 makeReference(isolate, context, info[0].As<v8::Object>(),
                               info[1].As<v8::External>());
+            }).ToLocalChecked()
+    ).Check();
+
+    exports->Set(
+            context,
+            v8::String::NewFromUtf8Literal(isolate, "__defineClass"),
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                SETUP_CALLBACK_INFO();
+                v8::Local<v8::String> className = info[0].As<v8::String>();
+                v8::Local<v8::String> superclass = info[1].As<v8::String>();
+                v8::Local<v8::Array> implementations = info[2].As<v8::Array>();
+                v8::Local<v8::Array> methods = info[3].As<v8::Array>();
+                v8::Local<v8::String> outputDexFile = info[4].As<v8::String>();
+                info.GetReturnValue().Set(
+                        defineClass(isolate, context, className, superclass, implementations,
+                                    methods,
+                                    outputDexFile)
+                );
+            }).ToLocalChecked()
+    ).Check();
+
+    exports->Set(
+            context,
+            v8::String::NewFromUtf8Literal(isolate, "__loadDex"),
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                SETUP_CALLBACK_INFO();
+                v8::Local<v8::String> dex = info[0].As<v8::String>();
+                JNIEnv *env = Main::env();
+                jclass javaBridgeUtilClass = env->FindClass(
+                        "com/mucheng/nodejava/javabridge/JavaBridgeUtil");
+                jmethodID loadDex = env->GetStaticMethodID(javaBridgeUtilClass, "loadDex",
+                                                           "(Ljava/lang/String;)V");
+                env->CallStaticVoidMethod(javaBridgeUtilClass, loadDex,
+                                          Util::CStr2JavaStr(*v8::String::Utf8Value(isolate, dex)));
             }).ToLocalChecked()
     ).Check();
 

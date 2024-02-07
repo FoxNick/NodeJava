@@ -2,13 +2,27 @@ require("./rhino").install();
 
 $java.setUnsafeReflectionEnabled(true);
 
-const thread = java.lang.Thread(() => {
-    console.log("exec")
-    while (true) {
-        java.lang.Thread.sleep(500)
-    }
-    console.log("Wtf")
-});
-thread.start();
+const ctx = com.mucheng.nodejava.MainActivity.currentMainActivity.get();
 
-setInterval(() => console.log('ticked'), 200);
+async function main() {
+    const clazz = await $java.defineClass(
+        class MyView extends android.view.View {
+            constructor(...args) {
+                super(...args);
+            }
+            onDraw(canvas) {
+                super.onDraw(canvas);
+                console.log(canvas);
+            }
+        },
+        {
+            packageName: "com.mucheng",
+            implements: [android.view.View.OnClickListener]
+        }
+    );
+
+    const btn = new clazz(ctx);
+    ctx.setContentView(btn);
+}
+
+main().catch(console.error);

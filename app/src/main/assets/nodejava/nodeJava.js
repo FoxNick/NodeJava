@@ -150,6 +150,17 @@
         });
     }
 
+    async function _defineClass(className, superclass, interfaces, methods, outputDexFile) {
+        if ($java.findClassOrNull(className)) {
+            throw new Error(`defineClass with a existing class: ${className}`);
+        }
+
+        console.log(className, superclass, interfaces, methods, outputDexFile);
+
+        await $java.getReturnValue($java.__defineClass(className, superclass, interfaces, methods, outputDexFile));
+        return $java.findClass(className);
+    }
+
     $java.defineClass = async function (jsClass, options) {
         if (!jsClass.name) {
             throw new Error(`class does not has name: ${jsClass}`);
@@ -177,10 +188,10 @@
         const fs = require("fs/promises");
 
         const interfaceNames = (options?.implements || []).map(it => it.class.getName());
-        const superclassName = clazz[$java.className];
+        const superClassName = clazz[$java.className];
         let outputDexFile = options?.cacheDexFile;
         if (!outputDexFile) {
-            const name = superclassName + ":" + [, ...interfaceNames].join(',') + ";methods:" + [...methods].join(',');
+            const name = superClassName + ":" + [, ...interfaceNames].join(',') + ";methods:" + [...methods].join(',');
             const md5 = require("crypto").createHash("md5").update(name).digest("hex");
             outputDexFile = path.join(process.cwd(), ".codecache", `${className}_${md5}_v1.dex`);
         }
@@ -192,14 +203,21 @@
             exists = false;
         }
         let generatedClass;
-        if (exists) {
-
+        if (false) {
+            $java.loadDex(outputDexFile);
+            generatedClass = $java.findClass(className);
         } else {
-
+            await fs.mkdir(path.dirname(outputDexFile), { recursive: true });
+            generatedClass = await _defineClass(className, superClassName, interfaceNames, [...methods], outputDexFile);
         }
         Object.setPrototypeOf(jsClass, generatedClass);
         Object.setPrototypeOf(jsClass.prototype, generatedClass.prototype);
         return jsClass;
+    }
+
+    const resolve = require("path").resolve;
+    $java.loadDex = function (dex) {
+        $java.__loadDex(resolve(dex));
     }
 
     globalThis["$java"] = $java;

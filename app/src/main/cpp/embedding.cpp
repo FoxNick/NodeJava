@@ -554,8 +554,8 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
     Interface *interface = asyncCall->interface;
     jstring methodNameStr = asyncCall->methodNameStr;
     jobjectArray params = asyncCall->params;
+
     v8::Isolate *isolate = interface->isolate;
-    v8::Isolate::Scope isolateScope(isolate);
     v8::HandleScope handleScope(isolate);
 
     v8::Local<v8::Context> context = interface->context.Get(isolate);

@@ -8,6 +8,7 @@ import android.util.Log
 import com.mucheng.nodejava.core.Context
 import com.mucheng.nodejava.core.Isolate
 import com.mucheng.nodejava.core.Locker
+import com.mucheng.nodejava.core.Unlocker
 import java.io.File
 import java.lang.ref.WeakReference
 import kotlin.concurrent.thread
@@ -26,17 +27,16 @@ class MainActivity : Activity() {
         currentMainActivity = WeakReference(this)
         extraAssets()
 
-        Handler(Looper.getMainLooper()).postDelayed({
-            val isolate = Isolate()
-            val context = Context(isolate, filesDir.absolutePath)
-            context.injectJavaBridge()
-            context.evaluateScript(File(filesDir, "nodeJava.js").readText())
-            context.evaluateScript(File(filesDir, "main.js").readText())
+        thread{
             thread {
-                Locker.lock(isolate)
+                val isolate = Isolate()
+                val context = Context(isolate, filesDir.absolutePath)
+                context.injectJavaBridge()
+                context.evaluateScript(File(filesDir, "nodeJava.js").readText())
+                context.evaluateScript(File(filesDir, "main.js").readText())
                 context.spinEventLoop()
             }
-        }, 200)
+        }
     }
 
     private fun extraAssets() {

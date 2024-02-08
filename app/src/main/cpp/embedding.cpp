@@ -28,11 +28,13 @@ public:
     v8::Isolate *isolate;
     v8::Persistent<v8::Context> context;
     v8::Persistent<v8::Value> value;
+    pthread_t threadId;
 
     Interface(
             v8::Isolate *isolate,
             v8::Local<v8::Context> context,
-            v8::Local<v8::Value> value
+            v8::Local<v8::Value> value,
+            pthread_t threadId
     );
 
     static void To(jobject instance, Interface *self);
@@ -43,11 +45,13 @@ public:
 Interface::Interface(
         v8::Isolate *isolate,
         v8::Local<v8::Context> context,
-        v8::Local<v8::Value> value
+        v8::Local<v8::Value> value,
+        pthread_t threadId
 ) {
     this->isolate = isolate;
     this->context.Reset(isolate, context);
     this->value.Reset(isolate, value);
+    this->threadId = threadId;
 }
 
 void Interface::To(jobject instance, Interface *self) {
@@ -263,7 +267,7 @@ jobject makeJavaReturnValue(
         return Wrapper::Unwrap(isolate, context, jsObject.As<v8::Object>());
     } else if (jsObject->IsObject()) {
         jobject interfaceObject = env->AllocObject(interfaceClass);
-        Interface *interface = new Interface(isolate, context, jsObject);
+        Interface *interface = new Interface(isolate, context, jsObject, pthread_self());
         Interface::To(interfaceObject, interface);
         return interfaceObject;
     }
@@ -543,13 +547,17 @@ AsyncOrSyncCallback::AsyncOrSyncCallback(Interface *interface, jstring methodNam
 }
 
 std::queue<AsyncOrSyncCallback *> queue;
-std::mutex queueMutex;
+uv_mutex_t uvMutexTask;
+uv_async_t uvAsyncTask;
 
 void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
     Interface *interface = asyncCall->interface;
     jstring methodNameStr = asyncCall->methodNameStr;
     jobjectArray params = asyncCall->params;
     v8::Isolate *isolate = interface->isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope handleScope(isolate);
+
     v8::Local<v8::Context> context = interface->context.Get(isolate);
     JNIEnv *env = Main::env();
 
@@ -611,6 +619,24 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
     }
 }
 
+void cb_asyncOrSyncCall(uv_async_t *handle) {
+    AsyncOrSyncCallback *callData;
+    do {
+        uv_mutex_lock(&uvMutexTask);
+        if (!queue.empty()) {
+            callData = queue.front();
+            queue.pop();
+        } else {
+            callData = nullptr;
+        }
+        uv_mutex_unlock(&uvMutexTask);
+
+        if (callData) {
+            asyncOrSyncCall(callData, true);
+        }
+    } while (callData);
+}
+
 void JAVA_ACCESSOR_BINDING(
         v8::Local<v8::Object> exports,
         v8::Local<v8::Value>,
@@ -618,21 +644,11 @@ void JAVA_ACCESSOR_BINDING(
         void *priv
 ) {
     v8::Isolate *isolate = context->GetIsolate();
+    v8ThreadId = pthread_self();
 
-    v8::Local<v8::Object> process = context->Global()->Get(context,
-                                                           v8::String::NewFromUtf8Literal(isolate,
-                                                                                          "process")).ToLocalChecked().As<v8::Object>();
-    v8::Local<v8::Function> nextTick = process->Get(context, v8::String::NewFromUtf8Literal(isolate,
-                                                                                            "nextTick")).ToLocalChecked().As<v8::Function>();
-    nextTick->Call(context, context->Global(), 1, new v8::Local<v8::Value>[1]{
-            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
-                if (!queue.empty()) {
-                    AsyncOrSyncCallback *call = queue.front();
-                    queue.pop();
-                    asyncOrSyncCall(call, true);
-                }
-            }).ToLocalChecked()
-    }).ToLocalChecked();
+    uv_mutex_init(&uvMutexTask);
+    uv_async_init(node::GetCurrentEventLoop(isolate), &uvAsyncTask,
+                  cb_asyncOrSyncCall);
 
     exports->Set(
             context,
@@ -793,7 +809,9 @@ JNIEXPORT jobject JNICALL
 Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2_3Ljava_lang_Object_2(
         JNIEnv *env, jobject thiz, jstring methodNameStr, jobjectArray params) {
     Interface *interface = Interface::From(thiz);
-    if (v8ThreadIdEquals(v8ThreadId, pthread_self())) {
+
+    LOGE("ThreadEquals: %d", v8ThreadIdEquals(v8ThreadId, pthread_self()));
+    if (v8ThreadIdEquals(interface->threadId, pthread_self())) {
         AsyncOrSyncCallback call = AsyncOrSyncCallback(interface, methodNameStr, params);
         asyncOrSyncCall(&call, false);
         return call.result;
@@ -804,9 +822,10 @@ Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2
                                                     : methodNameStr),
                 (jobjectArray) (params != nullptr ? env->NewGlobalRef(params) : params)
         );
-        queueMutex.lock();
+        uv_mutex_lock(&uvMutexTask);
         queue.push(&call);
-        queueMutex.unlock();
+        uv_mutex_unlock(&uvMutexTask);
+        uv_async_send(&uvAsyncTask);
         while (!call.done);
         return call.result;
     }

@@ -2,4 +2,5 @@ require("./rhino").install();
 
 $java.setUnsafeReflectionEnabled(true);
 
-require("/sdcard/main.js");
+const ctx = com.mucheng.nodejava.MainActivity.currentMainActivity.get();
+

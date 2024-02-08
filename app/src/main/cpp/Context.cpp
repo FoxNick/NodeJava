@@ -4,6 +4,7 @@
 #include "main.h"
 #include "log.h"
 #include "embedding.h"
+#include "uv.h"
 #include <jni.h>
 #include <sstream>
 #include <iostream>
@@ -143,8 +144,8 @@ JNIEXPORT jboolean JNICALL
 Java_com_mucheng_nodejava_core_Context_nativeSpinEventLoop(JNIEnv *env, jobject thiz) {
     Context *context = Context::From(thiz);
     Isolate *isolate = context->isolate;
+
     SETUP_ISOLATE_CLASS();
-    SETUP_CONTEXT_CLASS();
 
     return SpinEventLoop(context->environment).FromMaybe(1) == 0;
 }
@@ -166,6 +167,7 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
     SETUP_ISOLATE_CLASS();
     SETUP_CONTEXT_CLASS();
 
+    v8::TryCatch tryCatch(isolate->self);
     v8::MaybeLocal<v8::Script> compiling = v8::Script::Compile(context->self.Get(isolate->self),
                                                                v8::String::NewFromUtf8(
                                                                        isolate->self,

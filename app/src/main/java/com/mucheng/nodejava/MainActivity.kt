@@ -2,11 +2,9 @@ package com.mucheng.nodejava
 
 import android.app.Activity
 import android.os.Bundle
-import android.util.Log
 import com.mucheng.nodejava.core.Context
 import com.mucheng.nodejava.core.Isolate
 import com.mucheng.nodejava.core.Locker
-import com.mucheng.nodejava.core.Unlocker
 import java.io.File
 import java.lang.ref.WeakReference
 import kotlin.concurrent.thread
@@ -30,7 +28,11 @@ class MainActivity : Activity() {
         context.injectJavaBridge()
         context.evaluateScript(File(filesDir, "nodeJava.js").readText())
         context.evaluateScript(File(filesDir, "main.js").readText())
-        context.spinEventLoop()
+
+        thread {
+            Locker.lock(isolate)
+            context.spinEventLoop()
+        }
     }
 
     private fun extraAssets() {

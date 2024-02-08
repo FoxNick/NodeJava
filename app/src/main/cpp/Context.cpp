@@ -167,7 +167,6 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
     SETUP_ISOLATE_CLASS();
     SETUP_CONTEXT_CLASS();
 
-    v8::TryCatch tryCatch(isolate->self);
     v8::MaybeLocal<v8::Script> compiling = v8::Script::Compile(context->self.Get(isolate->self),
                                                                v8::String::NewFromUtf8(
                                                                        isolate->self,

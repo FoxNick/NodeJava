@@ -1,7 +1,10 @@
-package com.mucheng.nodejava
+package com.mojang.minecraftpe
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import com.mucheng.nodejava.core.Context
 import com.mucheng.nodejava.core.Isolate
 import com.mucheng.nodejava.core.Locker
@@ -23,16 +26,17 @@ class MainActivity : Activity() {
         currentMainActivity = WeakReference(this)
         extraAssets()
 
-        val isolate = Isolate()
-        val context = Context(isolate, filesDir.absolutePath)
-        context.injectJavaBridge()
-        context.evaluateScript(File(filesDir, "nodeJava.js").readText())
-        context.evaluateScript(File(filesDir, "main.js").readText())
-
-        thread {
-            Locker.lock(isolate)
-            context.spinEventLoop()
-        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            val isolate = Isolate()
+            val context = Context(isolate, filesDir.absolutePath)
+            context.injectJavaBridge()
+            context.evaluateScript(File(filesDir, "nodeJava.js").readText())
+            context.evaluateScript(File(filesDir, "main.js").readText())
+            thread {
+                Locker.lock(isolate)
+                context.spinEventLoop()
+            }
+        }, 200)
     }
 
     private fun extraAssets() {

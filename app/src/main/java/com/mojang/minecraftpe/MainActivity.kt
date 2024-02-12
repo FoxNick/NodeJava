@@ -2,13 +2,9 @@ package com.mojang.minecraftpe
 
 import android.app.Activity
 import android.os.Bundle
-import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import com.mucheng.nodejava.core.Context
 import com.mucheng.nodejava.core.Isolate
-import com.mucheng.nodejava.core.Locker
-import com.mucheng.nodejava.core.Unlocker
 import java.io.File
 import java.lang.ref.WeakReference
 import kotlin.concurrent.thread
@@ -27,15 +23,13 @@ class MainActivity : Activity() {
         currentMainActivity = WeakReference(this)
         extraAssets()
 
-        thread{
-            thread {
-                val isolate = Isolate()
-                val context = Context(isolate, filesDir.absolutePath)
-                context.injectJavaBridge()
-                context.evaluateScript(File(filesDir, "nodeJava.js").readText())
-                context.evaluateScript(File(filesDir, "main.js").readText())
-                context.spinEventLoop()
-            }
+        val isolate = Isolate()
+        val context = Context(isolate, filesDir.absolutePath)
+        context.injectJavaBridge()
+        context.evaluateScript(File(filesDir, "nodeJava.js").readText())
+        context.evaluateScript(File(filesDir, "main.js").readText())
+        thread {
+            context.spinEventLoop()
         }
     }
 

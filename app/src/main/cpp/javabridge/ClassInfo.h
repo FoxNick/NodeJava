@@ -7,7 +7,7 @@
 class ClassInfo {
 public:
     static v8::Local<v8::Value>
-    BuildObject(v8::Isolate *isolate, v8::Local<v8::Context>, jobject instance);
+    BuildObject(v8::Isolate *isolate, jobject instance);
 
 private:
     ClassInfo() = delete;

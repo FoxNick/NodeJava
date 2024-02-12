@@ -32,7 +32,6 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         Isolate.cpp
         Context.cpp
         Locker.cpp
-        Unlocker.cpp
         javabridge/ClassInfo.cpp
         javabridge/Wrapper.cpp
         )

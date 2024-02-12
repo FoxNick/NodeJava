@@ -12,22 +12,25 @@
 Context::Context(Isolate *isolate) {
     this->isolate = isolate;
 
+    v8::Locker locker(isolate->self);
     SETUP_ISOLATE_CLASS();
-    self.Reset(isolate->self, node::NewContext(isolate->self));
 
+    v8::Local<v8::Context> v8Context = node::NewContext(isolate->self);
     environment = node::CreateEnvironment(
             isolate->isolateData,
-            self.Get(isolate->self),
+            v8Context,
             Main::initializationResult->args(),
             Main::initializationResult->exec_args(),
             node::EnvironmentFlags::kOwnsProcessState
     );
 
-    v8::Context::Scope contextScope(self.Get(isolate->self));
+    v8::Context::Scope contextScope(v8Context);
     SetProcessExitHandler(environment, [&](node::Environment *pEnvironment, int exitCode) {
         // Prevent Node.js to terminate isolate
         Stop(pEnvironment, node::StopFlags::kDoNotTerminateIsolate);
     });
+
+    context_.Reset(isolate->self, v8Context);
 }
 
 void Context::To(jobject instance, Context *self) {
@@ -80,6 +83,7 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
     Context *context = Context::From(thiz);
     Isolate *isolate = context->isolate;
 
+    v8::Locker locker(isolate->self);
     SETUP_ISOLATE_CLASS();
     SETUP_CONTEXT_CLASS();
 
@@ -102,7 +106,7 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
     if (result.IsEmpty()) {
         if (tryCatch.HasCaught()) {
             v8::MaybeLocal<v8::Value> stackTrace = v8::TryCatch::StackTrace(
-                    context->self.Get(isolate->self), tryCatch.Exception());
+                    v8Context, tryCatch.Exception());
             if (stackTrace.IsEmpty()) {
                 Util::ThrowNodeException(
                         *v8::String::Utf8Value(isolate->self, tryCatch.Exception()));
@@ -115,26 +119,24 @@ Java_com_mucheng_nodejava_core_Context_nativeLoadEnvironment(JNIEnv *env, jobjec
     }
 
     // Setup default Uncaught Exception Handler
-    v8::Local<v8::Object> globalObject = context->self.Get(isolate->self)->Global();
+    v8::Local<v8::Object> globalObject = v8Context->Global();
     v8::Local<v8::Object> processObject = globalObject->Get(
-            context->self.Get(isolate->self),
+            v8Context,
             v8::String::NewFromUtf8Literal(isolate->self,
                                            "process")).ToLocalChecked().As<v8::Object>();
 
-    v8::Local<v8::Function> onFunction = processObject->Get(context->self.Get(isolate->self),
+    v8::Local<v8::Function> onFunction = processObject->Get(v8Context,
                                                             v8::String::NewFromUtf8Literal(
                                                                     isolate->self,
                                                                     "on")).ToLocalChecked().As<v8::Function>();
 
-    onFunction->Call(context->self.Get(isolate->self), processObject, 2, new v8::Local<v8::Value>[]{
-            v8::String::NewFromUtf8Literal(isolate->self, "uncaughtException"),
-            v8::Function::New(context->self.Get(isolate->self),
+    onFunction->Call(v8Context, processObject, 2, new v8::Local<v8::Value>[]{
+            v8::String::NewFromUtf8(isolate->self, "uncaughtException").ToLocalChecked(),
+            v8::Function::New(v8Context,
                               [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                                   v8::Isolate *isolate = info.GetIsolate();
-                                  v8::Local<v8::Object> err = info[0].As<v8::Object>();
-                                  const char *cStr = *v8::String::Utf8Value(isolate, err);
-                                  LOGE("Uncaught Exception: %s", cStr);
-                                  Util::ThrowNodeException(cStr);
+                                  std::string string(*v8::String::Utf8Value(isolate, info[0]));
+                                  Util::ThrowNodeException(string.c_str());
                               }).ToLocalChecked()
     }).ToLocalChecked();
 }
@@ -145,7 +147,9 @@ Java_com_mucheng_nodejava_core_Context_nativeSpinEventLoop(JNIEnv *env, jobject 
     Context *context = Context::From(thiz);
     Isolate *isolate = context->isolate;
 
+    v8::Locker locker(isolate->self);
     SETUP_ISOLATE_CLASS();
+    SETUP_CONTEXT_CLASS();
 
     return SpinEventLoop(context->environment).FromMaybe(1) == 0;
 }
@@ -164,10 +168,11 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
     Context *context = Context::From(thiz);
     Isolate *isolate = context->isolate;
 
+    v8::Locker locker(isolate->self);
     SETUP_ISOLATE_CLASS();
     SETUP_CONTEXT_CLASS();
 
-    v8::MaybeLocal<v8::Script> compiling = v8::Script::Compile(context->self.Get(isolate->self),
+    v8::MaybeLocal<v8::Script> compiling = v8::Script::Compile(v8Context,
                                                                v8::String::NewFromUtf8(
                                                                        isolate->self,
                                                                        Util::JavaStr2CStr(
@@ -176,8 +181,7 @@ Java_com_mucheng_nodejava_core_Context_nativeEvaluateScript(JNIEnv *env, jobject
         return;
     }
 
-    v8::MaybeLocal<v8::Value> running = compiling.ToLocalChecked()->Run(
-            context->self.Get(isolate->self));
+    v8::MaybeLocal<v8::Value> running = compiling.ToLocalChecked()->Run(v8Context);
 
     if (running.IsEmpty()) {
         return;

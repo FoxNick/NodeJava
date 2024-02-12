@@ -12,27 +12,23 @@
 
 v8::Local<v8::Value> makeJSReturnValue(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         jobject javaObject,
         bool isVoid
 );
 
 jobject makeJavaReturnValue(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::Value> jsObject
 );
 
 class Interface {
 public:
     v8::Isolate *isolate;
-    v8::Persistent<v8::Context> context;
     v8::Persistent<v8::Value> value;
     pthread_t threadId;
 
     Interface(
             v8::Isolate *isolate,
-            v8::Local<v8::Context> context,
             v8::Local<v8::Value> value,
             pthread_t threadId
     );
@@ -44,12 +40,10 @@ public:
 
 Interface::Interface(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::Value> value,
         pthread_t threadId
 ) {
     this->isolate = isolate;
-    this->context.Reset(isolate, context);
     this->value.Reset(isolate, value);
     this->threadId = threadId;
 }
@@ -62,15 +56,15 @@ Interface *Interface::From(jobject instance) {
     return Util::GetPtrAs<Interface *>(instance, "interfacePtr");
 }
 
-pthread_t v8ThreadId;
+pthread_t mainThreadId;
+pthread_t eventLoopThreadId;
 
-bool v8ThreadIdEquals(pthread_t a, pthread_t b) {
+bool threadIdEquals(pthread_t a, pthread_t b) {
     return pthread_equal(a, b);
 }
 
 v8::Local<v8::Value> getClassInfo(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::String> className
 ) {
     JNIEnv *env = Main::env();
@@ -86,14 +80,10 @@ v8::Local<v8::Value> getClassInfo(
         return v8::Null(isolate);
     }
 
-    return ClassInfo::BuildObject(isolate, context, classInfoInstance);
+    return ClassInfo::BuildObject(isolate, classInfoInstance);
 }
 
-v8::Local<v8::Value> classForName(
-        v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
-        v8::Local<v8::String> className
-) {
+v8::Local<v8::Value> classForName(v8::Isolate *isolate, v8::Local<v8::String> className) {
     JNIEnv *env = Main::env();
     jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jclass classLoaderClass = env->FindClass("java/lang/ClassLoader");
@@ -114,15 +104,15 @@ v8::Local<v8::Value> classForName(
         return v8::Null(isolate);
     }
 
-    return makeJSReturnValue(isolate, context, javaClassObject, false);
+    return makeJSReturnValue(isolate, javaClassObject, false);
 }
 
 v8::Local<v8::Value> makeJSReturnValue(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         jobject javaObject,
         bool isVoid
 ) {
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
     jclass javaObjectClass = env->FindClass("java/lang/Object");
     jclass javaClazz = env->FindClass("java/lang/Class");
@@ -203,7 +193,7 @@ v8::Local<v8::Value> makeJSReturnValue(
         for (int index = 0; index < length; index++) {
             jobject element = env->CallStaticObjectMethod(arrayClass, get, javaObjectArray, index);
             array->Set(context, index,
-                       makeJSReturnValue(isolate, context, element, false)).Check();
+                       makeJSReturnValue(isolate, element, false)).Check();
         }
     } else {
         javaClass = v8::String::NewFromUtf8(isolate, typeStr).ToLocalChecked();
@@ -219,9 +209,9 @@ v8::Local<v8::Value> makeJSReturnValue(
 
 jobject makeJavaReturnValue(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::Value> jsObject
 ) {
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
     jclass javaObjectClass = env->FindClass("java/lang/Object");
     jclass integerClass = env->FindClass("java/lang/Integer");
@@ -259,7 +249,7 @@ jobject makeJavaReturnValue(
         jobjectArray javaArray = env->NewObjectArray(length, javaObjectClass, nullptr);
         for (int index = 0; index < length; index++) {
             v8::Local<v8::Value> element = array->Get(context, index).ToLocalChecked();
-            jobject javaReturnValue = makeJavaReturnValue(isolate, context, element);
+            jobject javaReturnValue = makeJavaReturnValue(isolate, element);
             env->SetObjectArrayElement(javaArray, index, javaReturnValue);
         }
     } else if (jsObject->IsObject() &&
@@ -267,7 +257,7 @@ jobject makeJavaReturnValue(
         return Wrapper::Unwrap(isolate, context, jsObject.As<v8::Object>());
     } else if (jsObject->IsObject()) {
         jobject interfaceObject = env->AllocObject(interfaceClass);
-        Interface *interface = new Interface(isolate, context, jsObject, pthread_self());
+        Interface *interface = new Interface(isolate, jsObject, pthread_self());
         Interface::To(interfaceObject, interface);
         return interfaceObject;
     }
@@ -277,11 +267,11 @@ jobject makeJavaReturnValue(
 
 v8::Local<v8::Value> getField(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::String> className,
         v8::Local<v8::String> fieldName,
         v8::Local<v8::Object> self
 ) {
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
     jclass javaBridgeUtil = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jmethodID getField = env->GetStaticMethodID(javaBridgeUtil, "getField",
@@ -315,7 +305,6 @@ v8::Local<v8::Value> getField(
 
     return makeJSReturnValue(
             isolate,
-            context,
             javaObject,
             false
     );
@@ -323,17 +312,17 @@ v8::Local<v8::Value> getField(
 
 void setField(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::String> className,
         v8::Local<v8::String> fieldName,
         v8::Local<v8::Value> value,
         v8::Local<v8::Object> self
 ) {
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
     jclass javaBridgeUtil = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jmethodID callMethod = env->GetStaticMethodID(javaBridgeUtil, "setField",
                                                   "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V");
-    jobject javaObject = makeJavaReturnValue(isolate, context, value);
+    jobject javaObject = makeJavaReturnValue(isolate, value);
 
     if (!Wrapper::IsWrapped(isolate, context, self)) {
         env->CallStaticVoidMethod(
@@ -364,12 +353,12 @@ void setField(
 
 v8::Local<v8::Value> callMethod(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::String> className,
         v8::Local<v8::String> methodName,
         v8::Local<v8::Array> arguments,
         v8::Local<v8::Object> self
 ) {
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
     jclass javaBridgeUtil = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jclass javaObjectClass = env->FindClass("java/lang/Object");
@@ -382,7 +371,7 @@ v8::Local<v8::Value> callMethod(
     jobjectArray javaParams = env->NewObjectArray(length, javaObjectClass, nullptr);
     for (int index = 0; index < length; index++) {
         v8::Local<v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
-        jobject javaReturnValue = makeJavaReturnValue(isolate, context, jsObject);
+        jobject javaReturnValue = makeJavaReturnValue(isolate, jsObject);
         env->SetObjectArrayElement(javaParams, index, javaReturnValue);
     }
 
@@ -416,7 +405,6 @@ v8::Local<v8::Value> callMethod(
 
     return makeJSReturnValue(
             isolate,
-            context,
             env->GetObjectArrayElement(javaObjectArray, 0),
             env->CallBooleanMethod(env->GetObjectArrayElement(javaObjectArray, 1), booleanValue)
     );
@@ -424,11 +412,10 @@ v8::Local<v8::Value> callMethod(
 
 void makeReference(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::Object> target,
         v8::Local<v8::External> value
 ) {
-    Wrapper::WrapTo(isolate, context, target, static_cast<jobject>(value->Value()));
+    Wrapper::WrapTo(isolate, isolate->GetCurrentContext(), target, static_cast<jobject>(value->Value()));
 }
 
 void defineClass(
@@ -443,13 +430,13 @@ void defineClass(
 
 void defineClass(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::String> className,
         v8::Local<v8::String> superclass,
         v8::Local<v8::Array> implementations,
         v8::Local<v8::Array> methods,
         v8::Local<v8::String> outputDexFile
 ) {
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
     jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jclass stringClass = env->FindClass("java/lang/String");
@@ -493,10 +480,10 @@ void defineClass(
 
 v8::Local<v8::Value> createJavaObject(
         v8::Isolate *isolate,
-        v8::Local<v8::Context> context,
         v8::Local<v8::String> className,
         v8::Local<v8::Array> arguments
 ) {
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
     jclass javaBridgeUtilClass = env->FindClass("com/mucheng/nodejava/javabridge/JavaBridgeUtil");
     jclass javaObjectClass = env->FindClass("java/lang/Object");
@@ -508,7 +495,7 @@ v8::Local<v8::Value> createJavaObject(
 
     for (int index = 0; index < length; index++) {
         v8::Local<v8::Value> jsObject = arguments->Get(context, index).ToLocalChecked();
-        jobject javaReturnValue = makeJavaReturnValue(isolate, context, jsObject);
+        jobject javaReturnValue = makeJavaReturnValue(isolate, jsObject);
         env->SetObjectArrayElement(javaParams, index, javaReturnValue);
     }
 
@@ -556,9 +543,10 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
     jobjectArray params = asyncCall->params;
 
     v8::Isolate *isolate = interface->isolate;
+    v8::Locker locker(isolate);
     v8::HandleScope handleScope(isolate);
 
-    v8::Local<v8::Context> context = interface->context.Get(isolate);
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
 
     if (methodNameStr == nullptr) {
@@ -566,7 +554,7 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
         int length = env->GetArrayLength(params);
         v8::Local<v8::Value> jsParams[length];
         for (int index = 0; index < length; index++) {
-            jsParams[index] = makeJSReturnValue(isolate, context,
+            jsParams[index] = makeJSReturnValue(isolate,
                                                 env->GetObjectArrayElement(params, index),
                                                 false);
         }
@@ -579,7 +567,7 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
             return;
         }
 
-        jobject javaResult = makeJavaReturnValue(isolate, context, result.ToLocalChecked());
+        jobject javaResult = makeJavaReturnValue(isolate, result.ToLocalChecked());
         if (crossThread) {
             javaResult = env->NewGlobalRef(javaResult);
         }
@@ -596,7 +584,7 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
         int length = env->GetArrayLength(params);
         v8::Local<v8::Value> jsParams[length];
         for (int index = 0; index < length; index++) {
-            jsParams[index] = makeJSReturnValue(isolate, context,
+            jsParams[index] = makeJSReturnValue(isolate,
                                                 env->GetObjectArrayElement(params, index),
                                                 false);
         }
@@ -609,7 +597,7 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
             return;
         }
 
-        jobject javaResult = makeJavaReturnValue(isolate, context, result.ToLocalChecked());
+        jobject javaResult = makeJavaReturnValue(isolate, result.ToLocalChecked());
         if (crossThread) {
             javaResult = env->NewGlobalRef(javaResult);
         }
@@ -621,6 +609,7 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
 
 void cb_asyncOrSyncCall(uv_async_t *handle) {
     AsyncOrSyncCallback *callData;
+    eventLoopThreadId = pthread_self();
     do {
         uv_mutex_lock(&uvMutexTask);
         if (!queue.empty()) {
@@ -644,7 +633,7 @@ void JAVA_ACCESSOR_BINDING(
         void *priv
 ) {
     v8::Isolate *isolate = context->GetIsolate();
-    v8ThreadId = pthread_self();
+    mainThreadId = pthread_self();
 
     uv_mutex_init(&uvMutexTask);
     uv_async_init(node::GetCurrentEventLoop(isolate), &uvAsyncTask,
@@ -661,7 +650,7 @@ void JAVA_ACCESSOR_BINDING(
             v8::String::NewFromUtf8Literal(isolate, "__classForName"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
-                info.GetReturnValue().Set(classForName(isolate, context, info[0].As<v8::String>()));
+                info.GetReturnValue().Set(classForName(isolate, info[0].As<v8::String>()));
             }).ToLocalChecked()
     ).Check();
 
@@ -670,7 +659,7 @@ void JAVA_ACCESSOR_BINDING(
             v8::String::NewFromUtf8Literal(isolate, "getClassInfo"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
-                info.GetReturnValue().Set(getClassInfo(isolate, context, info[0].As<v8::String>()));
+                info.GetReturnValue().Set(getClassInfo(isolate, info[0].As<v8::String>()));
             }).ToLocalChecked()
     ).Check();
 
@@ -679,7 +668,7 @@ void JAVA_ACCESSOR_BINDING(
             v8::String::NewFromUtf8Literal(isolate, "__getField"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
-                info.GetReturnValue().Set(getField(isolate, context, info[0].As<v8::String>(),
+                info.GetReturnValue().Set(getField(isolate, info[0].As<v8::String>(),
                                                    info[1].As<v8::String>(),
                                                    info[2].As<v8::Object>()));
             }).ToLocalChecked()
@@ -690,7 +679,7 @@ void JAVA_ACCESSOR_BINDING(
             v8::String::NewFromUtf8Literal(isolate, "__setField"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
-                setField(isolate, context, info[0].As<v8::String>(),
+                setField(isolate, info[0].As<v8::String>(),
                          info[1].As<v8::String>(),
                          info[2].As<v8::Value>(),
                          info[2].As<v8::Object>());
@@ -702,7 +691,7 @@ void JAVA_ACCESSOR_BINDING(
             v8::String::NewFromUtf8Literal(isolate, "__callMethod"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
-                info.GetReturnValue().Set(callMethod(isolate, context, info[0].As<v8::String>(),
+                info.GetReturnValue().Set(callMethod(isolate, info[0].As<v8::String>(),
                                                      info[1].As<v8::String>(),
                                                      info[2].As<v8::Array>(),
                                                      info[3].As<v8::Object>()));
@@ -715,7 +704,7 @@ void JAVA_ACCESSOR_BINDING(
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
                 info.GetReturnValue().Set(
-                        createJavaObject(isolate, context, info[0].As<v8::String>(),
+                        createJavaObject(isolate, info[0].As<v8::String>(),
                                          info[1].As<v8::Array>()));
             }).ToLocalChecked()
     ).Check();
@@ -725,7 +714,7 @@ void JAVA_ACCESSOR_BINDING(
             v8::String::NewFromUtf8Literal(isolate, "__makeReference"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
-                makeReference(isolate, context, info[0].As<v8::Object>(),
+                makeReference(isolate, info[0].As<v8::Object>(),
                               info[1].As<v8::External>());
             }).ToLocalChecked()
     ).Check();
@@ -740,7 +729,7 @@ void JAVA_ACCESSOR_BINDING(
                 v8::Local<v8::Array> implementations = info[2].As<v8::Array>();
                 v8::Local<v8::Array> methods = info[3].As<v8::Array>();
                 v8::Local<v8::String> outputDexFile = info[4].As<v8::String>();
-                defineClass(isolate, context, className, superclass, implementations,
+                defineClass(isolate, className, superclass, implementations,
                             methods,
                             outputDexFile);
             }).ToLocalChecked()
@@ -809,13 +798,12 @@ JNIEXPORT jobject JNICALL
 Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2_3Ljava_lang_Object_2(
         JNIEnv *env, jobject thiz, jstring methodNameStr, jobjectArray params) {
     Interface *interface = Interface::From(thiz);
-
-    LOGE("ThreadEquals: %d", v8ThreadIdEquals(v8ThreadId, pthread_self()));
-    if (v8ThreadIdEquals(interface->threadId, pthread_self())) {
+    if (threadIdEquals(mainThreadId, pthread_self())) {
         AsyncOrSyncCallback call = AsyncOrSyncCallback(interface, methodNameStr, params);
         asyncOrSyncCall(&call, false);
         return call.result;
     } else {
+        LOGE("Exec");
         AsyncOrSyncCallback call = AsyncOrSyncCallback(
                 interface,
                 (jstring) (methodNameStr != nullptr ? env->NewGlobalRef(methodNameStr)

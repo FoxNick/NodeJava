@@ -4,7 +4,8 @@
 #include "log.h"
 
 v8::Local<v8::Value>
-ClassInfo::BuildObject(v8::Isolate *isolate, v8::Local<v8::Context> context, jobject instance) {
+ClassInfo::BuildObject(v8::Isolate *isolate, jobject instance) {
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
     JNIEnv *env = Main::env();
 
     v8::Local<v8::Object> classInfo = v8::Object::New(isolate);

@@ -1,5 +1,7 @@
 package com.mucheng.nodejava.core;
 
+import android.util.Log;
+
 public class Context {
 
   private final Isolate isolate;
@@ -50,6 +52,10 @@ public class Context {
   private native void nativeStop();
 
   private native void nativeInjectJavaBridge();
+
+  private static void throwUncaughtException(String message) {
+    Log.e("Message", message);
+  }
 
   public Isolate getIsolate() {
     return isolate;

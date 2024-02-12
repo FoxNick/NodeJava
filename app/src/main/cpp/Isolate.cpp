@@ -6,7 +6,9 @@
 
 Isolate::Isolate() {
     allocator = node::CreateArrayBufferAllocator();
-    loop = uv_loop_new();
+    loop = static_cast<uv_loop_s *>(malloc(sizeof(uv_loop_s)));
+    uv_loop_init(loop);
+
     self = node::NewIsolate(
             allocator,
             loop,

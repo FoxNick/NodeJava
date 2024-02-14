@@ -83,13 +83,10 @@ jint JNI_OnLoad(JavaVM *vm, void *unused) {
     }
 
     start_redirecting_stdout_stderr();
-
     std::vector<std::string> args = {"node"};
-
     Main::initializationResult =
             node::InitializeOncePerProcess(args, {
-                    node::ProcessInitializationFlags::kNoInitializeV8,
-                    node::ProcessInitializationFlags::kNoInitializeNodeV8Platform
+                node::ProcessInitializationFlags::kNoDefaultSignalHandling
             }).release();
 
     for (const std::string &error: Main::initializationResult->errors())
@@ -98,12 +95,7 @@ jint JNI_OnLoad(JavaVM *vm, void *unused) {
         return Main::initializationResult->exit_code();
     }
 
-
-    Main::platform =
-            node::MultiIsolatePlatform::Create(4).release();
-    v8::V8::InitializePlatform(Main::platform);
-    v8::V8::Initialize();
-
+    Main::platform = Main::initializationResult->platform();
     return JNI_VERSION_1_6;
 }
 

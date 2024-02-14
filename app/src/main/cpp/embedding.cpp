@@ -24,13 +24,13 @@ jobject makeJavaReturnValue(
 class Interface {
 public:
     v8::Isolate *isolate;
+    v8::Persistent<v8::Context> context;
     v8::Persistent<v8::Value> value;
-    pthread_t threadId;
 
     Interface(
             v8::Isolate *isolate,
-            v8::Local<v8::Value> value,
-            pthread_t threadId
+            v8::Local<v8::Context> context,
+            v8::Local<v8::Value> value
     );
 
     static void To(jobject instance, Interface *self);
@@ -40,12 +40,12 @@ public:
 
 Interface::Interface(
         v8::Isolate *isolate,
-        v8::Local<v8::Value> value,
-        pthread_t threadId
+        v8::Local<v8::Context> context,
+        v8::Local<v8::Value> value
 ) {
     this->isolate = isolate;
+    this->context.Reset(isolate, context);
     this->value.Reset(isolate, value);
-    this->threadId = threadId;
 }
 
 void Interface::To(jobject instance, Interface *self) {
@@ -57,7 +57,6 @@ Interface *Interface::From(jobject instance) {
 }
 
 pthread_t mainThreadId;
-pthread_t eventLoopThreadId;
 
 bool threadIdEquals(pthread_t a, pthread_t b) {
     return pthread_equal(a, b);
@@ -257,7 +256,7 @@ jobject makeJavaReturnValue(
         return Wrapper::Unwrap(isolate, context, jsObject.As<v8::Object>());
     } else if (jsObject->IsObject()) {
         jobject interfaceObject = env->AllocObject(interfaceClass);
-        Interface *interface = new Interface(isolate, jsObject, pthread_self());
+        Interface *interface = new Interface(isolate, context, jsObject);
         Interface::To(interfaceObject, interface);
         return interfaceObject;
     }
@@ -415,7 +414,8 @@ void makeReference(
         v8::Local<v8::Object> target,
         v8::Local<v8::External> value
 ) {
-    Wrapper::WrapTo(isolate, isolate->GetCurrentContext(), target, static_cast<jobject>(value->Value()));
+    Wrapper::WrapTo(isolate, isolate->GetCurrentContext(), target,
+                    static_cast<jobject>(value->Value()));
 }
 
 void defineClass(
@@ -533,22 +533,20 @@ AsyncOrSyncCallback::AsyncOrSyncCallback(Interface *interface, jstring methodNam
     this->params = params;
 }
 
-std::queue<AsyncOrSyncCallback *> queue;
-uv_mutex_t uvMutexTask;
-uv_async_t uvAsyncTask;
-
-void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
+void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall) {
     Interface *interface = asyncCall->interface;
     jstring methodNameStr = asyncCall->methodNameStr;
     jobjectArray params = asyncCall->params;
 
     v8::Isolate *isolate = interface->isolate;
     v8::Locker locker(isolate);
+    v8::Isolate::Scope isolateScope(isolate);
     v8::HandleScope handleScope(isolate);
 
-    v8::Local<v8::Context> context = isolate->GetCurrentContext();
-    JNIEnv *env = Main::env();
+    v8::Local<v8::Context> context = interface->context.Get(isolate);
+    v8::Context::Scope contextScope(context);
 
+    JNIEnv *env = Main::env();
     if (methodNameStr == nullptr) {
         v8::Local<v8::Function> value = interface->value.Get(isolate).As<v8::Function>();
         int length = env->GetArrayLength(params);
@@ -568,9 +566,9 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
         }
 
         jobject javaResult = makeJavaReturnValue(isolate, result.ToLocalChecked());
-        if (crossThread) {
-            javaResult = env->NewGlobalRef(javaResult);
-        }
+//        if (crossThread) {
+//            javaResult = env->NewGlobalRef(javaResult);
+//        }
         asyncCall->result = javaResult;
         asyncCall->done = true;
         return;
@@ -598,32 +596,13 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall, bool crossThread) {
         }
 
         jobject javaResult = makeJavaReturnValue(isolate, result.ToLocalChecked());
-        if (crossThread) {
-            javaResult = env->NewGlobalRef(javaResult);
-        }
+//        if (crossThread) {
+//            javaResult = env->NewGlobalRef(javaResult);
+//        }
         asyncCall->result = javaResult;
         asyncCall->done = true;
         return;
     }
-}
-
-void cb_asyncOrSyncCall(uv_async_t *handle) {
-    AsyncOrSyncCallback *callData;
-    eventLoopThreadId = pthread_self();
-    do {
-        uv_mutex_lock(&uvMutexTask);
-        if (!queue.empty()) {
-            callData = queue.front();
-            queue.pop();
-        } else {
-            callData = nullptr;
-        }
-        uv_mutex_unlock(&uvMutexTask);
-
-        if (callData) {
-            asyncOrSyncCall(callData, true);
-        }
-    } while (callData);
 }
 
 void JAVA_ACCESSOR_BINDING(
@@ -634,10 +613,6 @@ void JAVA_ACCESSOR_BINDING(
 ) {
     v8::Isolate *isolate = context->GetIsolate();
     mainThreadId = pthread_self();
-
-    uv_mutex_init(&uvMutexTask);
-    uv_async_init(node::GetCurrentEventLoop(isolate), &uvAsyncTask,
-                  cb_asyncOrSyncCall);
 
     exports->Set(
             context,
@@ -800,21 +775,9 @@ Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2
     Interface *interface = Interface::From(thiz);
     if (threadIdEquals(mainThreadId, pthread_self())) {
         AsyncOrSyncCallback call = AsyncOrSyncCallback(interface, methodNameStr, params);
-        asyncOrSyncCall(&call, false);
+        asyncOrSyncCall(&call);
         return call.result;
     } else {
-        LOGE("Exec");
-        AsyncOrSyncCallback call = AsyncOrSyncCallback(
-                interface,
-                (jstring) (methodNameStr != nullptr ? env->NewGlobalRef(methodNameStr)
-                                                    : methodNameStr),
-                (jobjectArray) (params != nullptr ? env->NewGlobalRef(params) : params)
-        );
-        uv_mutex_lock(&uvMutexTask);
-        queue.push(&call);
-        uv_mutex_unlock(&uvMutexTask);
-        uv_async_send(&uvAsyncTask);
-        while (!call.done);
-        return call.result;
+        return nullptr;
     }
 }

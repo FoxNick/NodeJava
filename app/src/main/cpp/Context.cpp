@@ -155,6 +155,47 @@ Java_com_mucheng_nodejava_core_Context_nativeSpinEventLoop(JNIEnv *env, jobject 
 }
 
 extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_mucheng_nodejava_core_Context_nativeUvRunNoWait(JNIEnv *env, jobject thiz) {
+    Context *context = Context::From(thiz);
+    Isolate *isolate = context->isolate;
+
+    v8::Locker locker(isolate->self);
+    SETUP_ISOLATE_CLASS();
+    SETUP_CONTEXT_CLASS();
+
+    uv_run(isolate->loop, UV_RUN_NOWAIT);
+    return uv_loop_alive(isolate->loop);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_mucheng_nodejava_core_Context_nativeDrainTasks(JNIEnv *env, jobject thiz) {
+    Context *context = Context::From(thiz);
+    Isolate *isolate = context->isolate;
+    node::MultiIsolatePlatform *multiIsolatePlatform = node::GetMultiIsolatePlatform(context->environment);
+
+    v8::Locker locker(isolate->self);
+    SETUP_ISOLATE_CLASS();
+    SETUP_CONTEXT_CLASS();
+
+    multiIsolatePlatform->DrainTasks(isolate->self);
+}
+
+extern "C"
+JNIEXPORT jlong JNICALL
+Java_com_mucheng_nodejava_core_Context_nativeUvBackendTimeout(JNIEnv *env, jobject thiz) {
+    Context *context = Context::From(thiz);
+    Isolate *isolate = context->isolate;
+
+    v8::Locker locker(isolate->self);
+    SETUP_ISOLATE_CLASS();
+    SETUP_CONTEXT_CLASS();
+
+    return uv_backend_timeout(isolate->loop);
+}
+
+extern "C"
 JNIEXPORT void JNICALL
 Java_com_mucheng_nodejava_core_Context_nativeStop(JNIEnv *env, jobject thiz) {
     Context *context = Context::From(thiz);

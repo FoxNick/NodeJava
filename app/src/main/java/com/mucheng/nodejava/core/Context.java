@@ -1,64 +1,102 @@
 package com.mucheng.nodejava.core;
 
-import android.util.Log;
+import android.os.Handler;
+import android.os.Looper;
+
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class Context {
 
-  private final Isolate isolate;
+    private final Isolate isolate;
 
-  long contextPtr;
+    long contextPtr;
 
-  public Context(Isolate isolate) {
-    this(isolate, "");
-  }
-
-  public Context(Isolate isolate, String pwd) {
-    this.isolate = isolate;
-    nativeCreateContext(isolate.isolatePtr);
-    nativeLoadEnvironment(pwd);
-  }
-
-  public static Context newRequiredContext(Isolate isolate, String pwd) {
-    return new Context(isolate, "globalThis.require = require('module').createRequire('" + pwd + "/');");
-  }
-
-  public void evaluateScript(String script) {
-    if (script == null) {
-      throw new NullPointerException("script cannot be null");
+    public Context(Isolate isolate) {
+        this(isolate, "");
     }
-    nativeEvaluateScript(script);
-  }
 
-  public boolean spinEventLoop() {
-    return nativeSpinEventLoop();
-  }
+    public Context(Isolate isolate, String pwd) {
+        this.isolate = isolate;
+        nativeCreateContext(isolate.isolatePtr);
+        nativeLoadEnvironment(pwd);
+    }
 
-  public void stop() {
-    nativeStop();
-  }
+    public static Context newRequiredContext(Isolate isolate, String pwd) {
+        return new Context(isolate, "globalThis.require = require('module').createRequire('" + pwd + "/');");
+    }
 
-  public void injectJavaBridge() {
-    nativeInjectJavaBridge();
-  }
+    public void evaluateScript(String script) {
+        if (script == null) {
+            throw new NullPointerException("script cannot be null");
+        }
+        nativeEvaluateScript(script);
+    }
 
-  private native void nativeCreateContext(long isolatePtr);
+    public boolean spinEventLoop() {
+        return nativeSpinEventLoop();
+    }
 
-  private native void nativeLoadEnvironment(String pwd);
+    public void spinEventLoopNoWait() {
+        if (Looper.getMainLooper().equals(Looper.myLooper())) {
+            final Handler handler = new Handler(Looper.getMainLooper());
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (nativeUvRunNoWait()) {
+                        nativeDrainTasks();
+                        handler.postDelayed(this, nativeUvBackendTimeout());
+                    } else {
+                        handler.postDelayed(this, 3);
+                    }
+                }
+            });
+        } else {
+            new Timer().schedule(new TimerTask() {
 
-  private native void nativeEvaluateScript(String script);
+                @Override
+                public void run() {
+                    final Timer timer = new Timer();
+                    if (nativeUvRunNoWait()) {
+                        nativeDrainTasks();
+                        timer.schedule(this, nativeUvBackendTimeout());
+                    } else {
+                        timer.schedule(this, 3);
+                    }
+                }
 
-  private native boolean nativeSpinEventLoop();
+            }, 0);
+        }
+    }
 
-  private native void nativeStop();
+    public void stop() {
+        nativeStop();
+    }
 
-  private native void nativeInjectJavaBridge();
+    public void injectJavaBridge() {
+        nativeInjectJavaBridge();
+    }
 
-  private static void throwUncaughtException(String message) {
-    Log.e("Message", message);
-  }
+    private native void nativeCreateContext(long isolatePtr);
 
-  public Isolate getIsolate() {
-    return isolate;
-  }
+    private native void nativeLoadEnvironment(String pwd);
+
+    private native void nativeEvaluateScript(String script);
+
+    private native boolean nativeSpinEventLoop();
+
+    private native boolean nativeUvRunNoWait();
+
+    private native void nativeDrainTasks();
+
+    private native long nativeUvBackendTimeout();
+
+    private native void nativeStop();
+
+    private native void nativeInjectJavaBridge();
+
+    public Isolate getIsolate() {
+        return isolate;
+    }
 
 }

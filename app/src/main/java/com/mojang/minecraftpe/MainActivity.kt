@@ -2,12 +2,10 @@ package com.mojang.minecraftpe
 
 import android.app.Activity
 import android.os.Bundle
-import android.os.Looper
 import com.mucheng.nodejava.core.Context
 import com.mucheng.nodejava.core.Isolate
 import java.io.File
 import java.lang.ref.WeakReference
-import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
 
@@ -18,19 +16,21 @@ class MainActivity : Activity() {
 
     }
 
+    private lateinit var isolate: Isolate
+
+    private lateinit var context: Context
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         currentMainActivity = WeakReference(this)
         extraAssets()
 
-        val isolate = Isolate()
-        val context = Context(isolate, filesDir.absolutePath)
+        isolate = Isolate()
+        context = Context(isolate, filesDir.absolutePath)
         context.injectJavaBridge()
         context.evaluateScript(File(filesDir, "nodeJava.js").readText())
         context.evaluateScript(File(filesDir, "main.js").readText())
-        thread {
-            context.spinEventLoop()
-        }
+        context.spinEventLoopNoWait()
     }
 
     private fun extraAssets() {

@@ -8,6 +8,7 @@ Isolate::Isolate() {
     allocator = node::CreateArrayBufferAllocator();
     loop = static_cast<uv_loop_s *>(malloc(sizeof(uv_loop_s)));
     uv_loop_init(loop);
+    uv_loop_configure(loop, UV_METRICS_IDLE_TIME);
 
     self = node::NewIsolate(
             allocator,

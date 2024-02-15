@@ -778,6 +778,9 @@ Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2
         asyncOrSyncCall(&call);
         return call.result;
     } else {
-        return nullptr;
+        // Block the current thread.
+        while (true) {
+            usleep(100);
+        };
     }
 }

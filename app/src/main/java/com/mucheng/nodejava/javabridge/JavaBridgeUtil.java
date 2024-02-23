@@ -1,7 +1,5 @@
 package com.mucheng.nodejava.javabridge;
 
-import android.util.Log;
-
 import com.android.dx.Code;
 import com.android.dx.Comparison;
 import com.android.dx.DexMaker;
@@ -555,30 +553,115 @@ public final class JavaBridgeUtil {
 
     private static void generateMethods(DexMaker dexMaker, TypeId currentClass, String[] methodNames, Class<?>[] interfaces, Class<?> superJavaClass) {
         TypeId javaScriptDelegateTypeId = TypeId.get(JavaScriptDelegate.class);
+        MethodId hasMethod = javaScriptDelegateTypeId.getMethod(
+                TypeId.BOOLEAN, "hasMethod", TypeId.STRING
+        );
+        MethodId isInteractingJavaMethod = javaScriptDelegateTypeId.getMethod(
+                TypeId.BOOLEAN, "isInteractingJavaMethod"
+        );
+        MethodId callMethod = javaScriptDelegateTypeId.getMethod(
+                TypeId.OBJECT, "callMethod", TypeId.STRING, TypeId.get(Object[].class)
+        );
+
         List<Method> methods = getOverridableMethods(superJavaClass, methodNames, interfaces);
         for (Method method : methods) {
+            Class<?> declaringClass = method.getDeclaringClass();
+            boolean isAbstractOrInterface = Modifier.isInterface(declaringClass.getModifiers()) || Modifier.isAbstract(declaringClass.getModifiers());
+
             Class<?>[] parameterTypes = method.getParameterTypes();
             TypeId[] parameterTypeIds = classes2typeIds(parameterTypes);
+            MethodId superMethodId = TypeId.get(method.getDeclaringClass()).getMethod(TypeId.get(method.getReturnType()), method.getName(), parameterTypeIds);
             MethodId methodId = currentClass.getMethod(TypeId.get(method.getReturnType()), method.getName(), parameterTypeIds);
             FieldId javaScriptDelegateFieldId = currentClass.getField(javaScriptDelegateTypeId, "javaScriptDelegate");
             Code code = dexMaker.declare(methodId, Modifier.PUBLIC);
             Local javaScriptDelegateLocal = code.newLocal(javaScriptDelegateTypeId);
+            Local methodNameLocal = code.newLocal(TypeId.STRING);
             Local nullLocal = code.newLocal(TypeId.OBJECT);
+            Local hasMethodLocal = code.newLocal(TypeId.BOOLEAN);
+            Local isInteractingJavaMethodLocal = code.newLocal(TypeId.BOOLEAN);
             Local thisLocal = code.getThis(currentClass);
+            Local falseLocal = code.newLocal(TypeId.BOOLEAN);
+            Local arrayLocal = code.newLocal(TypeId.get(Object[].class));
+            Local arrayLengthLocal = code.newLocal(TypeId.INT);
+            Local[] indexLocals = new Local[parameterTypes.length];
+            for (int index = 0; index < parameterTypes.length; index++) {
+                indexLocals[index] = code.newLocal(TypeId.INT);
+            }
+            Local returnValueLocal = null;
+            if (!isVoid(method)) {
+                returnValueLocal = code.newLocal(TypeId.get(method.getReturnType()));
+            }
             Local[] parameterLocals = new Local[parameterTypes.length];
             for (int index = 0; index < parameterTypes.length; index++) {
                 parameterLocals[index] = code.getParameter(index, parameterTypeIds[index]);
             }
+            code.loadConstant(methodNameLocal, method.getName());
             code.loadConstant(nullLocal, null);
+            code.loadConstant(falseLocal, false);
+            code.loadConstant(arrayLengthLocal, parameterTypes.length);
+            for (int index = 0; index < parameterTypes.length; index++) {
+                code.loadConstant(indexLocals[index], index);
+            }
+            if (isAbstractOrInterface && returnValueLocal != null) {
+                code.loadConstant(returnValueLocal, null);
+            }
             code.iget(javaScriptDelegateFieldId, javaScriptDelegateLocal, thisLocal);
             Label isNullLabel = new Label();
             code.compare(Comparison.NE, isNullLabel, javaScriptDelegateLocal, nullLocal);
             // If this object is null
+            if (!isAbstractOrInterface) {
+                code.invokeSuper(superMethodId, returnValueLocal, thisLocal, parameterLocals);
+            }
+
+            if (returnValueLocal != null) {
+                code.returnValue(returnValueLocal);
+            } else {
+                code.returnVoid();
+            }
             code.mark(isNullLabel);
 
-            // Else
+            code.invokeVirtual(hasMethod, hasMethodLocal, javaScriptDelegateLocal, methodNameLocal);
+            Label noMethodLabel = new Label();
+            code.compare(Comparison.NE, noMethodLabel, hasMethodLocal, falseLocal);
 
-            code.returnVoid();
+            // If this object is null
+            if (!isAbstractOrInterface) {
+                code.invokeSuper(superMethodId, returnValueLocal, thisLocal, parameterLocals);
+            }
+
+            if (returnValueLocal != null) {
+                code.returnValue(returnValueLocal);
+            } else {
+                code.returnVoid();
+            }
+            code.mark(noMethodLabel);
+
+            code.invokeVirtual(isInteractingJavaMethod, isInteractingJavaMethodLocal, javaScriptDelegateLocal);
+            Label interactingJavaMethodLabel = new Label();
+            code.compare(Comparison.EQ, interactingJavaMethodLabel, isInteractingJavaMethodLocal, falseLocal);
+            // If this object is null
+            if (!isAbstractOrInterface) {
+                code.invokeSuper(superMethodId, returnValueLocal, thisLocal, parameterLocals);
+            }
+
+            if (returnValueLocal != null) {
+                code.returnValue(returnValueLocal);
+            } else {
+                code.returnVoid();
+            }
+            code.mark(interactingJavaMethodLabel);
+
+            code.newArray(arrayLocal, arrayLengthLocal);
+            for (int index = 0; index < parameterTypes.length; index++) {
+                code.aput(arrayLocal, indexLocals[index], parameterLocals[index]);
+            }
+
+            code.invokeVirtual(callMethod, returnValueLocal, javaScriptDelegateLocal, methodNameLocal, arrayLocal);
+            if (returnValueLocal != null) {
+                code.returnValue(returnValueLocal);
+            } else {
+                code.returnVoid();
+            }
         }
     }
 

@@ -1,7 +1,10 @@
 package com.mojang.minecraftpe
 
 import android.app.Activity
+import android.graphics.Canvas
 import android.os.Bundle
+import android.util.AttributeSet
+import android.widget.Button
 import com.mucheng.nodejava.core.Context
 import com.mucheng.nodejava.core.Isolate
 import java.io.File

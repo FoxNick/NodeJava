@@ -812,6 +812,29 @@ Java_com_mucheng_nodejava_javabridge_JavaScriptDelegate_nativeHasMethod(JNIEnv *
 }
 
 extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_mucheng_nodejava_javabridge_JavaScriptDelegate_nativeIsInteractingJavaMethod(JNIEnv *env,
+                                                                                      jobject thiz,
+                                                                                      jlong interfacePtr) {
+    Interface *interface = reinterpret_cast<Interface *>(interfacePtr);
+    v8::Isolate *isolate = interface->isolate;
+    v8::Locker locker(isolate);
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope handleScope(isolate);
+
+    v8::Local<v8::Context> context = interface->context.Get(isolate);
+    v8::Context::Scope contextScope(context);
+
+    v8::Local<v8::Object> javaBridge = context->Global()->Get(context,
+                                                              v8::String::NewFromUtf8Literal(
+                                                                      isolate,
+                                                                      "$java")).ToLocalChecked().As<v8::Object>();
+
+    return javaBridge->Get(context, v8::String::NewFromUtf8Literal(isolate,
+                                                                   "isInteractingJavaMethod")).ToLocalChecked().As<v8::Boolean>()->Value();
+}
+
+extern "C"
 JNIEXPORT jobject JNICALL
 Java_com_mucheng_nodejava_javabridge_JavaScriptDelegate_nativeCallMethod(JNIEnv *env, jobject thiz,
                                                                          jlong interfacePtr,
@@ -836,25 +859,32 @@ Java_com_mucheng_nodejava_javabridge_JavaScriptDelegate_nativeCallMethod(JNIEnv 
                                                                                             "getReturnValue")).ToLocalChecked().As<v8::Function>();
 
     v8::Local<v8::Object> value = interface->value.Get(isolate).As<v8::Object>();
-    v8::MaybeLocal<v8::Value> maybeLocal = value->Get(context, v8::String::NewFromUtf8(isolate,
-                                                                                       Util::JavaStr2CStr(
-                                                                                               methodName)).ToLocalChecked());
-    if (maybeLocal.IsEmpty()) {
+    v8::MaybeLocal<v8::Value> func = value->Get(context, v8::String::NewFromUtf8(isolate,
+                                                                                 Util::JavaStr2CStr(
+                                                                                         methodName)).ToLocalChecked());
+    if (func.IsEmpty()) {
         return nullptr;
     }
+
     int argc = env->GetArrayLength(arguments);
     v8::Local<v8::Value> argv[argc];
     for (int index = 0; index < argc; index++) {
-        maybeLocal = getReturnValue->Call(context, javaBridge, 1, new v8::Local<v8::Value>[1]{
-                makeJSReturnValue(isolate, env->GetObjectArrayElement(arguments, index), false)
-        });
+        v8::MaybeLocal<v8::Value> maybeLocal = getReturnValue->Call(context, javaBridge, 1,
+                                                                    new v8::Local<v8::Value>[1]{
+                                                                            makeJSReturnValue(
+                                                                                    isolate,
+                                                                                    env->GetObjectArrayElement(
+                                                                                            arguments,
+                                                                                            index),
+                                                                                    false)
+                                                                    });
         if (maybeLocal.IsEmpty()) {
             return nullptr;
         }
         argv[index] = maybeLocal.ToLocalChecked();
     }
 
-    v8::Local<v8::Function> fn = maybeLocal.ToLocalChecked().As<v8::Function>();
+    v8::Local<v8::Function> fn = func.ToLocalChecked().As<v8::Function>();
     v8::MaybeLocal<v8::Value> result = fn->Call(
             context,
             value,

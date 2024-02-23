@@ -9,9 +9,8 @@ async function main() {
             constructor(...args) {
                 super(...args);
             }
-            onDraw(canvas) {
-                super.onDraw(canvas);
-                console.log(canvas);
+            draw(canvas) {
+                super.draw(canvas);
             }
         },
         {
@@ -19,7 +18,9 @@ async function main() {
             implements: []
         }
     );
-    ctx.setContentView(new myViewClass(ctx));
+
+    const view = new myViewClass(ctx);
+    ctx.setContentView(view);
 }
 
 main().catch(console.error);

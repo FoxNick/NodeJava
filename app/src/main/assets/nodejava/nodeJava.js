@@ -1,6 +1,8 @@
 (function () {
     const $java = process._linkedBinding("java");
     $java.constructors = Object.create(null);
+    $java.isInteractingJavaMethod = false;
+    $java.isInteractingJavaField = false;
 
     const lateInitSymbol = Symbol("lateInit");
 
@@ -19,7 +21,10 @@
 
             const displayMethodName = `${className}.${methodName}`;
             const invoke = function (target, args) {
-                return $java.getReturnValue($java.__callMethod(className, methodName, args, target));
+                $java.isInteractingJavaMethod = true;
+                const result = $java.__callMethod(className, methodName, args, target);
+                $java.isInteractingJavaMethod = false;
+                return $java.getReturnValue(result);
             }
             const func = functionWithName(displayMethodName, function () {
                 return invoke(this, Array.prototype.slice.call(arguments));
@@ -37,12 +42,17 @@
                 enumerable: true,
                 configurable: false,
                 get: function () {
-                    return $java.getReturnValue($java.__getField(className, fieldName, this));
+                    $java.isInteractingJavaField = true;
+                    const result = $java.__getField(className, fieldName, this);
+                    $java.isInteractingJavaField = false;
+                    return $java.getReturnValue(result);
                 }
             };
             if (field.mutable) {
                 attributes["set"] = function (value) {
+                    $java.isInteractingJavaField = true;
                     $java.__setField(className, fieldName, value, this);
+                    $java.isInteractingJavaField = false;
                 }
             }
             Object.defineProperty(object, fieldName, attributes);
@@ -209,7 +219,7 @@
             exists = false;
         }
         let generatedClass;
-        if (false) {
+        if (exists) {
             $java.loadDex(outputDexFile);
             generatedClass = $java.findClass(className);
         } else {

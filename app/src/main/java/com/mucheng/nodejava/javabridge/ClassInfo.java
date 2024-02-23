@@ -24,6 +24,8 @@ public class ClassInfo {
 
     public boolean isArray;
 
+    public boolean isGenerated;
+
     public ClassInfo(Class<?> clazz) {
         this.className = clazz.getName();
 
@@ -72,6 +74,7 @@ public class ClassInfo {
         this.staticMethods = theStaticMethods.toArray(methodTypedArray);
         this.staticFields = theStaticFields.toArray(fieldTypedArray);
         this.isArray = clazz.isArray();
+        this.isGenerated = JavaScriptGeneratedClass.class.isAssignableFrom(clazz);
     }
 
 }

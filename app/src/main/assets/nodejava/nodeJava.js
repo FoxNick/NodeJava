@@ -75,17 +75,23 @@
             return null;
         }
 
+        const isGenerated = classInfo.isGenerated;
         const constructor = functionWithName(className, function () {
             if (!(this instanceof constructor)) {
                 return new constructor(...arguments);
             }
 
-            const args = Array.prototype.slice.call(arguments);
-            if (args.length === 1 && arguments[0] === lateInitSymbol) {
+            if (arguments.length === 1 && arguments[0] === lateInitSymbol) {
                 return;
             }
 
-            $java.__makeReference(this, $java.__createJavaObject(className, args));
+            const args = Array.prototype.slice.call(arguments);
+            if (isGenerated) {
+                args.push($java.__wrapAsInterface(this));
+            }
+
+            const javaObjectId = $java.__createJavaObject(className, args);
+            $java.__makeReference(this, javaObjectId);
         });
 
         installJavaMethodAndFields(constructor, className, classInfo.staticMethods, classInfo.staticFields);

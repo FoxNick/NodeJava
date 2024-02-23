@@ -30,6 +30,7 @@ ClassInfo::BuildObject(v8::Isolate *isolate, jobject instance) {
     jfieldID staticFieldsField = env->GetFieldID(classInfoClass, "staticFields",
                                                  "[Ljava/lang/reflect/Field;");
     jfieldID isArrayField = env->GetFieldID(classInfoClass, "isArray", "Z");
+    jfieldID isGeneratedField = env->GetFieldID(classInfoClass, "isGenerated", "Z");
 
     v8::Local<v8::String> className = v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
             static_cast<jstring>(env->GetObjectField(instance, classNameField))
@@ -164,6 +165,14 @@ ClassInfo::BuildObject(v8::Isolate *isolate, jobject instance) {
         isArray = v8::Boolean::New(isolate, false);
     }
 
+    v8::Local<v8::Boolean> isGenerated;
+    bool isGeneratedValue = env->GetBooleanField(instance, isGeneratedField);
+    if (isGeneratedValue) {
+        isGenerated = v8::Boolean::New(isolate, true);
+    } else {
+        isGenerated = v8::Boolean::New(isolate, false);
+    }
+
     classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "className"),
                    className).Check();
     classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "superclass"),
@@ -180,5 +189,7 @@ ClassInfo::BuildObject(v8::Isolate *isolate, jobject instance) {
                    staticFields).Check();
     classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "isArray"),
                    isArray).Check();
+    classInfo->Set(context, v8::String::NewFromUtf8Literal(isolate, "isGenerated"),
+                   isGenerated).Check();
     return classInfo;
 }

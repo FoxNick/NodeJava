@@ -47,6 +47,7 @@ public class Context {
                         nativeDrainTasks();
                         handler.postDelayed(this, nativeUvBackendTimeout());
                     } else {
+                        nativeDrainTasks();
                         handler.postDelayed(this, 3);
                     }
                 }
@@ -61,6 +62,7 @@ public class Context {
                         nativeDrainTasks();
                         timer.schedule(this, nativeUvBackendTimeout());
                     } else {
+                        nativeDrainTasks();
                         timer.schedule(this, 3);
                     }
                 }

@@ -86,10 +86,10 @@ jint JNI_OnLoad(JavaVM *vm, void *unused) {
 
     for (const std::string &error: Main::initializationResult->errors())
         LOGE("%s: %s\n", args[0].c_str(), error.c_str());
+
     if (Main::initializationResult->early_return() != 0) {
         return Main::initializationResult->exit_code();
     }
-
     Main::platform = Main::initializationResult->platform();
     return JNI_VERSION_1_6;
 }

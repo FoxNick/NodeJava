@@ -22,7 +22,12 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 import dalvik.system.PathClassLoader;
 
@@ -412,12 +417,8 @@ public final class JavaBridgeUtil {
             }
 
             return constructor.newInstance(handledParams);
-
         }
 
-        if (clazz.getSuperclass() != null) {
-            return getConstructor(clazz.getSuperclass().getName(), arguments);
-        }
         throw new InstantiationException("Can't find constructor " + className + "(" + argumentTypesToString(getArgumentTypes(arguments)) + ").");
     }
 
@@ -505,7 +506,8 @@ public final class JavaBridgeUtil {
         interfaceClasses[interfaceClasses.length - 1] = JavaScriptGeneratedClass.class;
         interfaces[interfaces.length - 1] = TypeId.get(JavaScriptGeneratedClass.class);
         dexMaker.declare(currentClass, "", Modifier.PUBLIC, superClass, interfaces);
-        generatePtrField(dexMaker, currentClass);
+        generateJavaScriptDelegateField(dexMaker, currentClass);
+        generateConstructors(dexMaker, currentClass, superJavaClass, superClass);
         generateMethods(dexMaker, currentClass, methods, interfaceClasses, superJavaClass);
 
         byte[] byteArray = dexMaker.generate();
@@ -518,17 +520,153 @@ public final class JavaBridgeUtil {
         loadDex(outputDexFile);
     }
 
-    private static void generatePtrField(DexMaker dexMaker, TypeId currentClass) {
-        FieldId fieldId = currentClass.getField(TypeId.LONG, "javaScriptDelegatePtr");
+    private static void generateConstructors(DexMaker dexMaker, TypeId currentClass, Class<?> superJavaClass, TypeId superClass) {
+        TypeId javaScriptDelegateTypeId = TypeId.get(JavaScriptDelegate.class);
+        Constructor<?>[] constructors = getOverridableConstructors(superJavaClass).toArray(new Constructor[0]);
+        for (Constructor<?> constructor : constructors) {
+            Class<?>[] parameterTypes = constructor.getParameterTypes();
+            TypeId[] parameterTypeIds = classes2typeIds(parameterTypes);
+            TypeId[] newParameterTypeIds = new TypeId[parameterTypes.length + 1];
+            System.arraycopy(parameterTypeIds, 0, newParameterTypeIds, 0, parameterTypes.length);
+            newParameterTypeIds[parameterTypes.length] = TypeId.LONG;
+
+            MethodId superInitMethod = superClass.getConstructor(parameterTypeIds);
+            MethodId initMethod = currentClass.getConstructor(newParameterTypeIds);
+            FieldId javaScriptDelegateFieldId = currentClass.getField(TypeId.get(JavaScriptDelegate.class), "javaScriptDelegate");
+            MethodId javaScriptDelegateInitMethod = javaScriptDelegateTypeId.getConstructor(TypeId.LONG, TypeId.OBJECT);
+            Code code = dexMaker.declare(initMethod, Modifier.PUBLIC);
+            Local javaScriptDelegateLocal = code.newLocal(javaScriptDelegateTypeId);
+            Local thisLocal = code.getThis(currentClass);
+            Local[] parameterLocals = new Local[parameterTypes.length];
+            for (int index = 0; index < parameterTypes.length; index++) {
+                parameterLocals[index] = code.getParameter(index, parameterTypeIds[index]);
+            }
+            code.invokeDirect(superInitMethod, null, thisLocal, parameterLocals);
+            code.newInstance(javaScriptDelegateLocal, javaScriptDelegateInitMethod, code.getParameter(parameterTypes.length, TypeId.LONG), thisLocal);
+            code.iput(javaScriptDelegateFieldId, thisLocal, javaScriptDelegateLocal);
+            code.returnVoid();
+        }
+    }
+
+    private static void generateJavaScriptDelegateField(DexMaker dexMaker, TypeId currentClass) {
+        FieldId fieldId = currentClass.getField(TypeId.get(JavaScriptDelegate.class), "javaScriptDelegate");
         dexMaker.declare(fieldId, Modifier.PRIVATE | Modifier.FINAL, null);
     }
 
     private static void generateMethods(DexMaker dexMaker, TypeId currentClass, String[] methodNames, Class<?>[] interfaces, Class<?> superJavaClass) {
+        TypeId javaScriptDelegateTypeId = TypeId.get(JavaScriptDelegate.class);
+        List<Method> methods = getOverridableMethods(superJavaClass, methodNames, interfaces);
+        for (Method method : methods) {
+            Class<?>[] parameterTypes = method.getParameterTypes();
+            TypeId[] parameterTypeIds = classes2typeIds(parameterTypes);
+            MethodId methodId = currentClass.getMethod(TypeId.get(method.getReturnType()), method.getName(), parameterTypeIds);
+            FieldId javaScriptDelegateFieldId = currentClass.getField(javaScriptDelegateTypeId, "javaScriptDelegate");
+            Code code = dexMaker.declare(methodId, Modifier.PUBLIC);
+            Local javaScriptDelegateLocal = code.newLocal(javaScriptDelegateTypeId);
+            Local nullLocal = code.newLocal(TypeId.OBJECT);
+            Local thisLocal = code.getThis(currentClass);
+            Local[] parameterLocals = new Local[parameterTypes.length];
+            for (int index = 0; index < parameterTypes.length; index++) {
+                parameterLocals[index] = code.getParameter(index, parameterTypeIds[index]);
+            }
+            code.loadConstant(nullLocal, null);
+            code.iget(javaScriptDelegateFieldId, javaScriptDelegateLocal, thisLocal);
+            Label isNullLabel = new Label();
+            code.compare(Comparison.NE, isNullLabel, javaScriptDelegateLocal, nullLocal);
+            // If this object is null
+            code.mark(isNullLabel);
 
+            // Else
+
+            code.returnVoid();
+        }
+    }
+
+    private static TypeId[] classes2typeIds(Class<?>[] classes) {
+        TypeId[] typeIds = new TypeId[classes.length];
+        for (int index = 0; index < classes.length; index++) {
+            typeIds[index] = TypeId.get(classes[index]);
+        }
+        return typeIds;
     }
 
     private static void loadDex(String dex) {
         classLoader = new PathClassLoader(dex, classLoader);
+    }
+
+    private static List<Constructor<?>> getOverridableConstructors(Class<?> clazz) {
+        List<Constructor<?>> list = new ArrayList<>();
+        Constructor<?>[] declaredConstructors = clazz.getDeclaredConstructors();
+        for (Constructor<?> declaredConstructor : declaredConstructors) {
+            int modifiers = declaredConstructor.getModifiers();
+            if (!Modifier.isPublic(modifiers) && !Modifier.isProtected(modifiers)) {
+                continue;
+            }
+            list.add(declaredConstructor);
+        }
+        return list;
+    }
+
+    private static List<Method> getOverridableMethods(Class<?> clazz, String[] methodNames, Class<?>[] interfaces) {
+        return getOverridableMethods(clazz, methodNames, interfaces, new HashMap<>());
+    }
+
+    private static List<Method> getOverridableMethods(Class<?> clazz, String[] methodNames, Class<?>[] interfaces, Map<String, Set<String>> map) {
+        Objects.requireNonNull(map);
+        Method[] classDeclaredMethods = clazz.getDeclaredMethods();
+        List<Method> methods = new ArrayList<>();
+
+        for (String methodName : methodNames) {
+            if (!map.containsKey(methodName)) {
+                map.put(methodName, new HashSet<>());
+            }
+
+            for (Method method : classDeclaredMethods) {
+                if (!method.getName().equals(methodName)) {
+                    continue;
+                }
+
+                int modifiers = method.getModifiers();
+                if (Modifier.isFinal(modifiers) || (!Modifier.isPublic(modifiers) && !Modifier.isProtected(modifiers))) {
+                    continue;
+                }
+
+                Set<String> set = map.get(methodName);
+                if (set != null) {
+                    if (set.add(Arrays.toString(method.getParameterTypes()))) {
+                        methods.add(method);
+                    }
+                }
+            }
+
+            if (clazz.getSuperclass() != null) {
+                methods.addAll(getOverridableMethods(clazz.getSuperclass(), methodNames, interfaces, map));
+            }
+
+            for (Class<?> theInterface : interfaces) {
+                Method[] interfaceDeclaredMethods = theInterface.getDeclaredMethods();
+                for (Method method : interfaceDeclaredMethods) {
+                    if (!method.getName().equals(methodName)) {
+                        continue;
+                    }
+
+                    int modifiers = method.getModifiers();
+                    if (Modifier.isFinal(modifiers) || (!Modifier.isPublic(modifiers) && !Modifier.isProtected(modifiers))) {
+                        continue;
+                    }
+
+                    Set<String> set = map.get(methodName);
+                    if (set != null) {
+                        if (set.add(Arrays.toString(method.getParameterTypes()))) {
+                            methods.add(method);
+                        }
+                    }
+                }
+            }
+
+        }
+
+        return methods;
     }
 
 }

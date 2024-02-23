@@ -566,9 +566,6 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall) {
         }
 
         jobject javaResult = makeJavaReturnValue(isolate, result.ToLocalChecked());
-//        if (crossThread) {
-//            javaResult = env->NewGlobalRef(javaResult);
-//        }
         asyncCall->result = javaResult;
         asyncCall->done = true;
         return;
@@ -596,9 +593,6 @@ void asyncOrSyncCall(AsyncOrSyncCallback *asyncCall) {
         }
 
         jobject javaResult = makeJavaReturnValue(isolate, result.ToLocalChecked());
-//        if (crossThread) {
-//            javaResult = env->NewGlobalRef(javaResult);
-//        }
         asyncCall->result = javaResult;
         asyncCall->done = true;
         return;
@@ -696,6 +690,17 @@ void JAVA_ACCESSOR_BINDING(
 
     exports->Set(
             context,
+            v8::String::NewFromUtf8Literal(isolate, "__wrapAsInterface"),
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
+                SETUP_CALLBACK_INFO();
+                Interface *interface = new Interface(isolate, context, info[0]);
+                info.GetReturnValue().Set(v8::BigInt::New(isolate,
+                                                          reinterpret_cast<long>(interface)));
+            }).ToLocalChecked()
+    ).Check();
+
+    exports->Set(
+            context,
             v8::String::NewFromUtf8Literal(isolate, "__defineClass"),
             v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value> &info) {
                 SETUP_CALLBACK_INFO();
@@ -783,4 +788,82 @@ Java_com_mucheng_nodejava_javabridge_Interface_nativeInvoke__Ljava_lang_String_2
             usleep(100);
         };
     }
+}
+
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_mucheng_nodejava_javabridge_JavaScriptDelegate_nativeHasMethod(JNIEnv *env, jobject thiz,
+                                                                        jlong interfacePtr,
+                                                                        jstring methodName) {
+    Interface *interface = reinterpret_cast<Interface *>(interfacePtr);
+    v8::Isolate *isolate = interface->isolate;
+    v8::Locker locker(isolate);
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope handleScope(isolate);
+
+    v8::Local<v8::Context> context = interface->context.Get(isolate);
+    v8::Context::Scope contextScope(context);
+
+    v8::Local<v8::Object> value = interface->value.Get(isolate).As<v8::Object>();
+    return value->Has(context, v8::String::NewFromUtf8(isolate, Util::JavaStr2CStr(
+            methodName)).ToLocalChecked()).FromMaybe(
+            false);
+}
+
+extern "C"
+JNIEXPORT jobject JNICALL
+Java_com_mucheng_nodejava_javabridge_JavaScriptDelegate_nativeCallMethod(JNIEnv *env, jobject thiz,
+                                                                         jlong interfacePtr,
+                                                                         jobject javaObject,
+                                                                         jstring methodName,
+                                                                         jobjectArray arguments) {
+    Interface *interface = reinterpret_cast<Interface *>(interfacePtr);
+    v8::Isolate *isolate = interface->isolate;
+    v8::Locker locker(isolate);
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope handleScope(isolate);
+
+    v8::Local<v8::Context> context = interface->context.Get(isolate);
+    v8::Context::Scope contextScope(context);
+
+    v8::Local<v8::Object> javaBridge = context->Global()->Get(context,
+                                                              v8::String::NewFromUtf8Literal(
+                                                                      isolate,
+                                                                      "$java")).ToLocalChecked().As<v8::Object>();
+    v8::Local<v8::Function> getReturnValue = javaBridge->Get(context,
+                                                             v8::String::NewFromUtf8Literal(isolate,
+                                                                                            "getReturnValue")).ToLocalChecked().As<v8::Function>();
+
+    v8::Local<v8::Object> value = interface->value.Get(isolate).As<v8::Object>();
+    v8::MaybeLocal<v8::Value> maybeLocal = value->Get(context, v8::String::NewFromUtf8(isolate,
+                                                                                       Util::JavaStr2CStr(
+                                                                                               methodName)).ToLocalChecked());
+    if (maybeLocal.IsEmpty()) {
+        return nullptr;
+    }
+    int argc = env->GetArrayLength(arguments);
+    v8::Local<v8::Value> argv[argc];
+    for (int index = 0; index < argc; index++) {
+        maybeLocal = getReturnValue->Call(context, javaBridge, 1, new v8::Local<v8::Value>[1]{
+                makeJSReturnValue(isolate, env->GetObjectArrayElement(arguments, index), false)
+        });
+        if (maybeLocal.IsEmpty()) {
+            return nullptr;
+        }
+        argv[index] = maybeLocal.ToLocalChecked();
+    }
+
+    v8::Local<v8::Function> fn = maybeLocal.ToLocalChecked().As<v8::Function>();
+    v8::MaybeLocal<v8::Value> result = fn->Call(
+            context,
+            value,
+            argc,
+            argv
+    );
+    if (result.IsEmpty()) {
+        return nullptr;
+    }
+
+    return makeJavaReturnValue(isolate, result.ToLocalChecked());
 }

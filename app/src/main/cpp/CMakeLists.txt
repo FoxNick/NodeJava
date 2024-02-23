@@ -31,7 +31,6 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         embedding.cpp
         Isolate.cpp
         Context.cpp
-        Locker.cpp
         javabridge/ClassInfo.cpp
         javabridge/Wrapper.cpp
         )

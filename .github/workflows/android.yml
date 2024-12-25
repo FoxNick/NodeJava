@@ -1,10 +1,11 @@
 name: Android CI
 
+concurrency:
+  group: android_node_build_${{ github.ref }}
+  cancel-in-progress: true
+
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
